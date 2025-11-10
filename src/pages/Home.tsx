@@ -428,7 +428,7 @@ export default function Home() {
             ) : (
               <>
                 {itemsPorCategoria.cafes.length > 0 && (<><h2 className="font-aventura text-2xl font-bold mt-6 mb-4 text-orange-400 flex items-center gap-2"><Coffee /> Cafés</h2><ProductGrid items={itemsPorCategoria.cafes} onUpdateQuantity={handleUpdateQuantity} order={order} /></>)}
-                {itemsPorCategoria.bebidas.length > 0 && (<><h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-orange-400">Otras Bebidas</h2><ProductGrid items={itemsPorCategoria.bebidas} onUpdateQuantity={handleUpdateQuantity} order={order} /></>)}
+                {itemsPorCategoria.bebidas.length > 0 && (<><h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-orange-400">Nuestras Bebidas</h2><ProductGrid items={itemsPorCategoria.bebidas} onUpdateQuantity={handleUpdateQuantity} order={order} /></>)}
                 {itemsPorCategoria.snacks.length > 0 && (<><h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-orange-400">Snacks</h2><ProductGrid items={itemsPorCategoria.snacks} onUpdateQuantity={handleUpdateQuantity} order={order} /></>)}
                 {itemsPorCategoria.noDisponibles.length > 0 && (<><h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-white/70">No Disponibles</h2><ProductGrid items={itemsPorCategoria.noDisponibles} onUpdateQuantity={() => {}} order={order} disabled={true} /></>)}
                 {items.length === 0 && !loadingItems && (<div className="text-center py-10"><p className="text-white/70">No hay items en el menú.</p></div>)}
@@ -453,7 +453,7 @@ export default function Home() {
              <motion.div initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} className="fixed bottom-4 right-4 z-50">
               <Button 
                 variant="default" 
-                className="bg-white text-unemi-blue rounded-full h-16 w-auto p-4 shadow-lg text-lg hover:bg-white/90"
+                className="bg-white text-black rounded-full h-16 w-auto p-4 shadow-lg text-lg hover:bg-white/90"
               >
                 <ShoppingBag className="mr-2 h-6 w-6" />
                 Ver Pedido ({order.reduce((acc, item) => acc + item.quantity, 0)})
@@ -667,7 +667,6 @@ function ProductGrid({ items, onUpdateQuantity, order, disabled = false }: { ite
                 <div className="flex items-center gap-2 justify-center">
                   <Button variant="outline" size="icon" className="h-10 w-10" onClick={() => onUpdateQuantity(item, 'dec')}><MinusCircle className="h-5 w-5" /></Button>
                   <span className="w-10 text-center text-xl font-bold">{quantity}</span>
-                  <Button variant="outline" size="icon" className="h-10 w-10" onClick={() => onUpdateQuantity(item, 'inc')}><PlusCircle className="h-5 w-5" /></Button>
                 </div>
               )}
             </div>

@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from '@/components/hooks/use-toast';
 
 // --- Iconos ---
-import { Cake, Coffee, LogOut, MinusCircle, ShoppingBag, Clock, History, MessageSquare, Loader2, PlusCircle, Star, KeyRound, Trophy, Timer } from 'lucide-react';
+import { Cake, Coffee, LogOut, MinusCircle, ShoppingBag, Clock, History, MessageSquare, Loader2, Star, KeyRound, Trophy, Timer } from 'lucide-react';
 
 // --- Tipos de Datos ---
 interface Item {

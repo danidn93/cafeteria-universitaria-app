@@ -136,7 +136,7 @@ export default function Home() {
       setPedidosActivos(data.filter(p => p.estado === 'pendiente' || p.estado === 'preparando' || p.estado === 'listo'));
       setPedidosHistorial(data.filter(p => p.estado === 'entregado'));
     }
-    setLoadingPedidos(false);
+    //setLoadingPedidos(false);
   };
 
   // --- ✨ FUNCIÓN DE RANKING ACTUALIZADA ---
@@ -179,10 +179,24 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
-    fetchPedidos();
+
+    // 1. Función interna para la carga inicial (CON spinner)
+    const loadInitialPedidos = async () => {
+      setLoadingPedidos(true); // <-- Spinner ON
+      await fetchPedidos();
+      setLoadingPedidos(false); // <-- Spinner OFF
+    };
+
+    // 2. Ejecutar la carga inicial
+    loadInitialPedidos();
+
+    // 3. Establecer el intervalo silencioso
+    // (fetchPedidos ya no activa el spinner)
     const intervalId = setInterval(() => {
       fetchPedidos();
     }, 5000);
+
+    // 4. Limpiar el intervalo
     return () => clearInterval(intervalId);
   }, [user]);
 
@@ -293,35 +307,57 @@ export default function Home() {
     : countdownDisplay; // (countdownDisplay ya es el mensaje de tiempo)
   
   // --- Lógica de Pedido (Completa) ---
+  // --- Lógica de Pedido (Completa) ---
   const handleUpdateQuantity = (item: Item, action: 'inc' | 'dec') => {
-    // ✨ COMPROBACIÓN ACTUALIZADA
-    if (action === 'inc' && order.length === 0 && isOrderBlocked) {
-       toast({
-          title: 'Pedido bloqueado',
-          description: finalBlockReason, // Muestra el temporizador o el error
-          variant: 'destructive',
-          duration: 5000,
-       });
-       return; 
+    
+    // ----- LÓGICA DE 'DEC' (REDUCIR) -----
+    // Si el usuario presiona 'Reducir', la única acción
+    // posible es vaciar el carrito, ya que solo puede haber 1 item.
+    if (action === 'dec') {
+      setOrder([]);
+      return;
     }
 
-    setOrder(prevOrder => {
-      const existingItem = prevOrder.find(i => i.id === item.id);
-      if (action === 'inc') {
-        if (existingItem) { return prevOrder.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i); } 
-        else { return [...prevOrder, { ...item, quantity: 1 }]; }
-      } 
-      if (action === 'dec') {
-        if (existingItem) {
-          if (existingItem.quantity > 1) { return prevOrder.map(i => i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i); } 
-          else { return prevOrder.filter(i => i.id !== item.id); }
-        }
+    // ----- LÓGICA DE 'INC' (SELECCIONAR) -----
+    if (action === 'inc') {
+      
+      // 1. COMPROBAR BLOQUEO GLOBAL (Tiempo o Calificación)
+      // Esto se comprueba primero, antes de intentar añadir nada.
+      if (isOrderBlocked) {
+         toast({
+            title: 'Pedido bloqueado',
+            description: finalBlockReason, // Muestra el temporizador o el error
+            variant: 'destructive',
+            duration: 5000,
+         });
+         return; // Detiene la función
       }
-      return prevOrder;
-    });
-    if (action === 'inc' && !isSheetOpen) { setIsSheetOpen(true); }
+
+      // 2. COMPROBAR LÍMITE DE 1 PRODUCTO
+      // Esta es la validación que buscas:
+      // Si el carrito (order) YA tiene un item (length > 0),
+      // mostramos un error y detenemos la función.
+      if (order.length > 0) {
+        toast({
+            title: 'Límite de productos alcanzado',
+            description: 'Solo puedes seleccionar un producto a la vez.',
+            variant: 'destructive',
+            duration: 4000,
+        });
+        return; // Detiene la función
+      }
+
+      // 3. AÑADIR EL PRODUCTO
+      // Si pasa las dos comprobaciones (no bloqueado Y carrito vacío),
+      // se añade el item con cantidad 1.
+      setOrder([{ ...item, quantity: 1 }]);
+      
+      // Abrir el "sheet" (carrito) si no está abierto
+      if (!isSheetOpen) {
+        setIsSheetOpen(true);
+      }
+    }
   };
-  
   const handleSubmitOrder = async () => {
     // ✨ Doble comprobación
     if (isOrderBlocked) {
@@ -492,7 +528,7 @@ export default function Home() {
               disabled={isSubmitting || order.length === 0 || isOrderBlocked} // ✨ Bloqueado aquí
               onClick={handleSubmitOrder}
             >
-              {isSubmitting ? 'Confirmando...' : (isOrderBlocked ? 'Pedido Bloqueado' : 'Confirmar y Retirar en 5 min')}
+              {isSubmitting ? 'Confirmando...' : (isOrderBlocked ? 'Pedido Bloqueado' : 'Confirmar Pedido')}
             </Button>
             
             {/* Mensaje de error si está bloqueado */}

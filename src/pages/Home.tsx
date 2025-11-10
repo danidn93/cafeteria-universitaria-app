@@ -177,21 +177,29 @@ export default function Home() {
     }
   }, [user]);
 
+  // --- Efecto de Carga de Pedidos (CON CARGA INICIAL y LUEGO SILENCIOSO) ---
   useEffect(() => {
     if (!user) return;
 
-    // 1. Función interna para la carga inicial (CON spinner)
+    // 1. Función interna para la carga inicial (CON SPINNER)
     const loadInitialPedidos = async () => {
-      setLoadingPedidos(true); // <-- Spinner ON
-      await fetchPedidos();
-      setLoadingPedidos(false); // <-- Spinner OFF
+      try {
+        setLoadingPedidos(true); // <-- Spinner ON
+        await fetchPedidos();    // <-- Intenta buscar los pedidos
+      } catch (error) {
+        // En caso de que fetchPedidos (por alguna razón) lance un error
+        console.error("Error en la carga inicial de pedidos:", error);
+      } finally {
+        // ✨ ESTA ES LA CLAVE ✨
+        // Esto se ejecuta SIEMPRE, haya funcionado o haya fallado el 'try'.
+        setLoadingPedidos(false); // <-- Spinner OFF (Garantizado)
+      }
     };
 
     // 2. Ejecutar la carga inicial
     loadInitialPedidos();
 
-    // 3. Establecer el intervalo silencioso
-    // (fetchPedidos ya no activa el spinner)
+    // 3. Establecer el intervalo silencioso (esto no ha cambiado)
     const intervalId = setInterval(() => {
       fetchPedidos();
     }, 5000);

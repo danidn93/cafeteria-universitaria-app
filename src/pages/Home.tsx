@@ -123,7 +123,7 @@ export default function Home() {
 
   const fetchPedidos = async () => {
     if (!user) return;
-    setLoadingPedidos(true); 
+    //setLoadingPedidos(true); 
     const { data, error } = await supabase
       .from('pedidos_pwa')
       // ✨ Seleccionamos updated_at

@@ -111,10 +111,14 @@ export default function Home() {
   ////////////////////////////////////////////////////////////////////////////////////////
   const checkBirthday = (birthDate: string) => {
     try {
-      const birth = new Date(birthDate); 
-      const today = new Date();
+      if (!birthDate) return;
 
-      // Evitar que se muestre más de una vez por día
+      // Convertir "YYYY-MM-DD" a fecha local REAL
+      const [year, month, day] = birthDate.split("-").map(Number);
+      const birth = new Date(year, month - 1, day); // ← LOCAL, no UTC
+
+      const today = new Date();
+      
       const todayKey = today.toDateString();
       const shownToday = localStorage.getItem("birthdayModalShown");
 
@@ -126,16 +130,18 @@ export default function Home() {
       if (isSameMonth && isSameDay) {
         setShowBirthdayModal(true);
 
+        // Calcular edad real sin desfases de zona horaria
         let age = today.getFullYear() - birth.getFullYear();
-        const monthDiff = today.getMonth() - birth.getMonth();
+        const hasNotHadBirthday =
+          today.getMonth() < birth.getMonth() ||
+          (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate());
 
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-          age--;
-        }
+        if (hasNotHadBirthday) age--;
 
         setUserAge(age);
         localStorage.setItem("birthdayModalShown", todayKey);
       }
+
     } catch (e) {
       console.error("Error parsing birth date", e);
     }

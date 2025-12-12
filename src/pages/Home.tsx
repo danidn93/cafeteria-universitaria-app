@@ -1205,9 +1205,7 @@ function BirthdayModal({
           </DialogTitle>
 
           <DialogDescription className="text-neutral-600">
-            ¡De parte de toda la cafetería, te deseamos un día increíble! 🎈
-            <br />
-            Pasa por tu bebida de cortesía.
+            ¡De parte de toda la cafetería, te deseamos un día increíble! 🎈            
           </DialogDescription>
         </div>
 

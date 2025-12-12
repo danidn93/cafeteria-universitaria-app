@@ -106,7 +106,57 @@ export default function Home() {
     return () => window.visualViewport?.removeEventListener('resize', setVh);
   }, []);
 
-  // --- Funciones de Fetch (Completas) ---
+  ////////////////////////////////////////////////////////////////////////////////////////
+  //                       🎂🎂  LÓGICA REAL DEL CUMPLEAÑOS  🎂🎂
+  ////////////////////////////////////////////////////////////////////////////////////////
+  const checkBirthday = (birthDate: string) => {
+    try {
+      const birth = new Date(birthDate); 
+      const today = new Date();
+
+      // Evitar que se muestre más de una vez por día
+      const todayKey = today.toDateString();
+      const shownToday = localStorage.getItem("birthdayModalShown");
+
+      if (shownToday === todayKey) return;
+
+      const isSameMonth = today.getMonth() === birth.getMonth();
+      const isSameDay = today.getDate() === birth.getDate();
+
+      if (isSameMonth && isSameDay) {
+        setShowBirthdayModal(true);
+
+        let age = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+          age--;
+        }
+
+        setUserAge(age);
+        localStorage.setItem("birthdayModalShown", todayKey);
+      }
+    } catch (e) {
+      console.error("Error parsing birth date", e);
+    }
+  };
+
+  useEffect(() => {
+    if (!user?.fecha_nacimiento) return;
+
+    // Primera verificación inmediata
+    checkBirthday(user.fecha_nacimiento);
+
+    // Verifica cada minuto
+    const interval = setInterval(() => {
+      if (!user?.fecha_nacimiento) return;
+      checkBirthday(user.fecha_nacimiento);
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // --- Funciones de Fetch ---
   const fetchConfig = async () => {
     const { data, error } = await supabase.from('configuracion').select('*').single();
     if (data) setConfig(data);
@@ -123,149 +173,124 @@ export default function Home() {
 
   const fetchPedidos = async () => {
     if (!user) return;
-    //setLoadingPedidos(true); 
     const { data, error } = await supabase
       .from('pedidos_pwa')
-      // ✨ Seleccionamos updated_at
       .select(`id, estado, created_at, updated_at, calificado, items:pedido_pwa_items ( item_nombre, cantidad )`)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
+
     if (error) {
       console.error('Error fetching pedidos:', error.message);
     } else if (data) {
       setPedidosActivos(data.filter(p => p.estado === 'pendiente' || p.estado === 'preparando' || p.estado === 'listo'));
       setPedidosHistorial(data.filter(p => p.estado === 'entregado'));
     }
-    //setLoadingPedidos(false);
   };
 
-  // --- ✨ FUNCIÓN DE RANKING ACTUALIZADA ---
   const fetchUserRanking = async () => {
     if (!user) return;
     setLoadingRanking(true);
 
-    // --- REAL RPC CALL ---
-    // Llama a la función que creaste en el Paso 1
     const { data, error } = await supabase.rpc('get_user_last_month_rank', {
       p_user_id: user.id 
     });
 
     if (error) {
       console.error('Error fetching ranking:', error.message);
-      setRanking(null); // No muestra el widget si hay error
+      setRanking(null);
     } else {
-      // data será el ranking (ej. 5) o null si no tuvo pedidos
       setRanking(data); 
     }
-    // --- FIN REAL CALL ---
     
     setLoadingRanking(false);
   };
-  
-  // --- Efectos de Carga de Datos ---
+
+  // --- Efectos de carga inicial ---
   useEffect(() => {
     if (!user) {
       setLoadingItems(false);
       setLoadingPedidos(false);
       return;
     }
+
     fetchConfig();
     fetchMenu();
-    fetchUserRanking(); // ✨ Llamada actualizada
-    if (user.fecha_nacimiento) {
-      checkBirthday(user.fecha_nacimiento);
-    }
+    fetchUserRanking();
+
   }, [user]);
 
-  // --- Efecto de Carga de Pedidos (CON CARGA INICIAL y LUEGO SILENCIOSO) ---
   useEffect(() => {
     if (!user) return;
 
-    // 1. Función interna para la carga inicial (CON SPINNER)
     const loadInitialPedidos = async () => {
       try {
-        setLoadingPedidos(true); // <-- Spinner ON
-        await fetchPedidos();    // <-- Intenta buscar los pedidos
+        setLoadingPedidos(true);
+        await fetchPedidos();
       } catch (error) {
-        // En caso de que fetchPedidos (por alguna razón) lance un error
         console.error("Error en la carga inicial de pedidos:", error);
       } finally {
-        // ✨ ESTA ES LA CLAVE ✨
-        // Esto se ejecuta SIEMPRE, haya funcionado o haya fallado el 'try'.
-        setLoadingPedidos(false); // <-- Spinner OFF (Garantizado)
+        setLoadingPedidos(false);
       }
     };
 
-    // 2. Ejecutar la carga inicial
     loadInitialPedidos();
 
-    // 3. Establecer el intervalo silencioso (esto no ha cambiado)
     const intervalId = setInterval(() => {
       fetchPedidos();
     }, 5000);
 
-    // 4. Limpiar el intervalo
     return () => clearInterval(intervalId);
   }, [user]);
 
-  // --- ✨ Efecto de Lógica de Bloqueo ---
+  // --- Lógica de bloqueo ---
   useEffect(() => {
     if (loadingPedidos) return;
 
-    // 1. Encontrar el pedido más reciente (activo o historial)
     const lastActive = pedidosActivos[0];
     const lastHistorical = pedidosHistorial[0];
     let mostRecentOrder: Pedido | null = null;
 
     if (lastActive && lastHistorical) {
-      mostRecentOrder = new Date(lastActive.created_at) > new Date(lastHistorical.created_at) ? lastActive : lastHistorical;
+      mostRecentOrder = new Date(lastActive.created_at) > new Date(lastHistorical.created_at)
+        ? lastActive
+        : lastHistorical;
     } else {
       mostRecentOrder = lastActive || lastHistorical || null;
     }
 
-    // 2. Comprobar bloqueo por tiempo (1 hora)
     if (mostRecentOrder) {
       const lastOrderTime = new Date(mostRecentOrder.created_at);
-      // La hora de expiración es 1h después del *último* pedido
-      const expirationTime = new Date(lastOrderTime.getTime() + 60 * 60 * 1000); 
+      const expirationTime = new Date(lastOrderTime.getTime() + 60 * 60 * 1000);
       
       if (expirationTime.getTime() > Date.now()) {
         setBlockReason("TIME_LOCK");
         setBlockExpiresAt(expirationTime);
-        return; // El bloqueo por tiempo tiene prioridad
+        return;
       }
     }
 
-    // 3. Comprobar bloqueo por calificación (si no hay bloqueo por tiempo)
     const lastDeliveredOrder = pedidosHistorial[0];
     if (lastDeliveredOrder && !lastDeliveredOrder.calificado) {
       setBlockReason("RATING_LOCK");
-      setBlockExpiresAt(null); // No hay tiempo de expiración
+      setBlockExpiresAt(null);
       return;
     }
 
-    // 4. Si no hay bloqueos
     setBlockReason(null);
     setBlockExpiresAt(null);
 
   }, [pedidosActivos, pedidosHistorial, loadingPedidos]);
 
-  // --- ✨ NUEVO: Efecto de Temporizador ---
-  // Se ejecuta cada 10 segundos para actualizar el contador
   useEffect(() => {
     const updateCountdown = () => {
       if (blockReason === "TIME_LOCK" && blockExpiresAt) {
         const diff = blockExpiresAt.getTime() - Date.now();
         
         if (diff <= 0) {
-          // El tiempo expiró. Limpiamos el estado.
-          // El 'useEffect' de bloqueo (arriba) se re-ejecutará 
-          // (por el polling de 5s) y comprobará el RATING_LOCK.
           setBlockExpiresAt(null);
           setBlockReason(null);
           setCountdownDisplay(null);
         } else {
-          // Calculamos minutos restantes
           const minutesLeft = Math.ceil(diff / (1000 * 60));
           setCountdownDisplay(`Próximo pedido en ${minutesLeft} min.`);
         }
@@ -276,98 +301,58 @@ export default function Home() {
       }
     };
 
-    // Ejecutar inmediatamente
     updateCountdown();
 
-    // Establecer intervalo para actualizar el contador
-    const intervalId = setInterval(updateCountdown, 10000); // Actualiza cada 10 seg
+    const intervalId = setInterval(updateCountdown, 10000);
 
-    return () => clearInterval(intervalId); // Limpiar
-    
+    return () => clearInterval(intervalId);
+
   }, [blockReason, blockExpiresAt]);
 
-  // --- Lógica de Cumpleaños (Completa) ---
-  const checkBirthday = (birthDate: string) => {
-    try {
-      const today = new Date();
-      const parts = birthDate.split('-');
-      const birthYear = parseInt(parts[0], 10);
-      const birthMonth = parseInt(parts[1], 10) - 1;
-      const birthDay = parseInt(parts[2], 10);
-
-      const isSameMonth = today.getMonth() === birthMonth;
-      const isSameDay = today.getDate() === birthDay;
-      
-      if (isSameMonth && isSameDay) {
-        setShowBirthdayModal(true);
-        let age = today.getFullYear() - birthYear;
-        const m = today.getMonth() - birthMonth;
-        if (m < 0 || (m === 0 && today.getDate() < birthDay)) age--;
-        setUserAge(age);
-      }
-    } catch (e) { console.error("Error parsing birth date", e); }
-  };
-
-  // --- Estados Derivados Finales ---
+  // --- Estados derivados finales ---
   const isOrderBlocked = !!blockReason;
   const finalBlockReason = blockReason === "RATING_LOCK" 
     ? "Debes calificar tu último pedido. (Ver en 'Mis Pedidos')" 
-    : countdownDisplay; // (countdownDisplay ya es el mensaje de tiempo)
-  
-  // --- Lógica de Pedido (Completa) ---
-  // --- Lógica de Pedido (Completa) ---
+    : countdownDisplay;
+
+  // --- Lógica para actualizar el carrito ---
   const handleUpdateQuantity = (item: Item, action: 'inc' | 'dec') => {
     
-    // ----- LÓGICA DE 'DEC' (REDUCIR) -----
-    // Si el usuario presiona 'Reducir', la única acción
-    // posible es vaciar el carrito, ya que solo puede haber 1 item.
     if (action === 'dec') {
       setOrder([]);
       return;
     }
 
-    // ----- LÓGICA DE 'INC' (SELECCIONAR) -----
     if (action === 'inc') {
       
-      // 1. COMPROBAR BLOQUEO GLOBAL (Tiempo o Calificación)
-      // Esto se comprueba primero, antes de intentar añadir nada.
       if (isOrderBlocked) {
          toast({
             title: 'Pedido bloqueado',
-            description: finalBlockReason, // Muestra el temporizador o el error
+            description: finalBlockReason,
             variant: 'destructive',
-            duration: 5000,
          });
-         return; // Detiene la función
+         return;
       }
 
-      // 2. COMPROBAR LÍMITE DE 1 PRODUCTO
-      // Esta es la validación que buscas:
-      // Si el carrito (order) YA tiene un item (length > 0),
-      // mostramos un error y detenemos la función.
       if (order.length > 0) {
         toast({
             title: 'Límite de productos alcanzado',
             description: 'Solo puedes seleccionar un producto a la vez.',
             variant: 'destructive',
-            duration: 4000,
         });
-        return; // Detiene la función
+        return;
       }
 
-      // 3. AÑADIR EL PRODUCTO
-      // Si pasa las dos comprobaciones (no bloqueado Y carrito vacío),
-      // se añade el item con cantidad 1.
       setOrder([{ ...item, quantity: 1 }]);
       
-      // Abrir el "sheet" (carrito) si no está abierto
       if (!isSheetOpen) {
         setIsSheetOpen(true);
       }
     }
   };
+
   const handleSubmitOrder = async () => {
-    // ✨ Doble comprobación
+
     if (isOrderBlocked) {
        toast({
           title: 'Pedido bloqueado',
@@ -379,25 +364,48 @@ export default function Home() {
 
     if (!user || order.length === 0) return; 
     setIsSubmitting(true);
+
     try {
-      const { data: pedidoData, error: pedidoError } = await supabase.from('pedidos_pwa').insert({ user_id: user.id, estado: 'pendiente' }).select('id').single();
-      if (pedidoError || !pedidoData) throw pedidoError || new Error('No se pudo crear el pedido.');
+      const { data: pedidoData, error: pedidoError } =
+        await supabase
+          .from('pedidos_pwa')
+          .insert({ user_id: user.id, estado: 'pendiente' })
+          .select('id')
+          .single();
+
+      if (pedidoError || !pedidoData) throw pedidoError;
+
       const newPedidoId = pedidoData.id;
-      const itemsToInsert = order.map(item => ({ pedido_pwa_id: newPedidoId, item_id: item.id, cantidad: item.quantity, item_nombre: item.nombre }));
-      const { error: itemsError } = await supabase.from('pedido_pwa_items').insert(itemsToInsert);
+
+      const itemsToInsert = order.map(item => ({
+        pedido_pwa_id: newPedidoId,
+        item_id: item.id,
+        cantidad: item.quantity,
+        item_nombre: item.nombre
+      }));
+
+      const { error: itemsError } =
+        await supabase.from('pedido_pwa_items').insert(itemsToInsert);
+
       if (itemsError) throw itemsError;
+
       toast({ title: '¡Pedido Confirmado!', description: 'Muchas Gracias.' });
       setOrder([]);
       setIsSheetOpen(false);
       fetchPedidos();
+
     } catch (error: any) {
       console.error('Error submitting order:', error);
-      toast({ title: 'Error al enviar el pedido', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Error al enviar el pedido',
+        description: error.message,
+        variant: 'destructive'
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
-  
+
   const itemsPorCategoria = useMemo(() => {
     const cafes = items.filter(item => item.tipo === 'cafe' && item.disponible);
     const snacks = items.filter(item => item.tipo === 'snack' && item.disponible);
@@ -405,20 +413,22 @@ export default function Home() {
     const noDisponibles = items.filter(item => !item.disponible);
     return { cafes, bebidas, snacks, noDisponibles };
   }, [items]);
-  
-  // ----- RENDERIZADO (JSX) -----
+
   return (
     <div className="unemi text-white relative pb-24" style={{ minHeight: minH }}>
       
       <div className="absolute inset-0 -z-10">
-        <div className="h-full w-full bg-no-repeat bg-center bg-cover" style={{ backgroundImage: `url(${bgUrl})` }} />
+        <div className="h-full w-full bg-no-repeat bg-center bg-cover"
+          style={{ backgroundImage: `url(${bgUrl})` }} />
         <div className="absolute inset-0 bg-[hsl(200_100%_13.5%/_0.88)]" />
       </div>
       
       <header className="p-4 flex justify-between items-start">
         <div>
-            <h1 className="text-xl font-bold">Hola, {user && (user.name?.split(' ')[0] || 'Empleado')} </h1>
-            <p className="text-white opacity-90">{config?.nombre_local || "Cafetería Universitaria"}</p>
+            <h1 className="text-xl font-bold">Hola, {user && (user.name?.split(' ')[0] || 'Empleado')}</h1>
+            <p className="text-white opacity-90">
+              {config?.nombre_local || "Cafetería Universitaria"}
+            </p>
             <div className="mt-3 text-sm text-white opacity-70 flex items-center gap-4">
               <div className='flex items-center gap-1.5'>
                 <Clock className="h-4 w-4" />
@@ -432,10 +442,11 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-2">
-          <img src={logo} alt="Logo" className="h-10 w-10 rounded-full border-2 border-unemi-orange" />
+          <img src={logo} alt="Logo"
+            className="h-10 w-10 rounded-full border-2 border-unemi-orange" />
           <SugerenciasDialog user={user} />
           <ChangePasswordDialog user={user} />
-          <Button variant="ghost" size="icon" onClick={logout} aria-label="Cerrar Sesión" className="shrink-0">
+          <Button variant="ghost" size="icon" onClick={logout} aria-label="Cerrar Sesión">
             <LogOut className="h-5 w-5" />
           </Button>
         </div>
@@ -451,31 +462,80 @@ export default function Home() {
       <main className="container mx-auto px-4 py-6">
         <Tabs defaultValue="menu" className="w-full">
           <TabsList className="grid w-full grid-cols-2 bg-white/10 border border-white/20">
-            <TabsTrigger value="menu" className="data-[state=active]:bg-unemi-orange data-[state=active]:text-white text-white">Menú</TabsTrigger>
-            <TabsTrigger value="pedidos" className="data-[state=active]:bg-unemi-orange data-[state=active]:text-white text-white">Mis Pedidos</TabsTrigger>
+            <TabsTrigger value="menu"
+              className="data-[state=active]:bg-unemi-orange data-[state=active]:text-white text-white">
+              Menú
+            </TabsTrigger>
+            <TabsTrigger value="pedidos"
+              className="data-[state=active]:bg-unemi-orange data-[state=active]:text-white text-white">
+              Mis Pedidos
+            </TabsTrigger>
           </TabsList>
           
           <TabsContent value="menu">
-            {/* ✨ Widget de Ranking (Ahora es real) */}
             <RankingWidget loading={loadingRanking} ranking={ranking} />
 
-            {/* ✨ Widget de Temporizador / Bloqueo */}
             <OrderLockWidget
               loading={loadingPedidos}
               isBlocked={isOrderBlocked}
-              reason={finalBlockReason} // Pasa el string final
+              reason={finalBlockReason}
             />
 
             <PedidosActivosWidget loading={loadingPedidos} activos={pedidosActivos} />
+            
             {loadingItems ? (
-              <div className="text-center py-10"><Coffee className="h-12 w-12 mx-auto animate-pulse text-white/70" /><p className="text-white/70 mt-2">Cargando menú...</p></div>
+              <div className="text-center py-10">
+                <Coffee className="h-12 w-12 mx-auto animate-pulse text-white/70" />
+                <p className="text-white/70 mt-2">Cargando menú...</p>
+              </div>
             ) : (
               <>
-                {itemsPorCategoria.cafes.length > 0 && (<><h2 className="font-aventura text-2xl font-bold mt-6 mb-4 text-orange-400 flex items-center gap-2"><Coffee /> Cafés</h2><ProductGrid items={itemsPorCategoria.cafes} onUpdateQuantity={handleUpdateQuantity} order={order} /></>)}
-                {itemsPorCategoria.bebidas.length > 0 && (<><h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-orange-400">Nuestras Bebidas</h2><ProductGrid items={itemsPorCategoria.bebidas} onUpdateQuantity={handleUpdateQuantity} order={order} /></>)}
-                {itemsPorCategoria.snacks.length > 0 && (<><h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-orange-400">Snacks</h2><ProductGrid items={itemsPorCategoria.snacks} onUpdateQuantity={handleUpdateQuantity} order={order} /></>)}
-                {itemsPorCategoria.noDisponibles.length > 0 && (<><h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-white/70">No Disponibles</h2><ProductGrid items={itemsPorCategoria.noDisponibles} onUpdateQuantity={() => {}} order={order} disabled={true} /></>)}
-                {items.length === 0 && !loadingItems && (<div className="text-center py-10"><p className="text-white/70">No hay items en el menú.</p></div>)}
+                {itemsPorCategoria.cafes.length > 0 && (
+                  <>
+                    <h2 className="font-aventura text-2xl font-bold mt-6 mb-4 text-orange-400 flex items-center gap-2">
+                      <Coffee /> Cafés
+                    </h2>
+                    <ProductGrid items={itemsPorCategoria.cafes} onUpdateQuantity={handleUpdateQuantity} order={order} />
+                  </>
+                )}
+
+                {itemsPorCategoria.bebidas.length > 0 && (
+                  <>
+                    <h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-orange-400">
+                      Nuestras Bebidas
+                    </h2>
+                    <ProductGrid items={itemsPorCategoria.bebidas} onUpdateQuantity={handleUpdateQuantity} order={order} />
+                  </>
+                )}
+
+                {itemsPorCategoria.snacks.length > 0 && (
+                  <>
+                    <h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-orange-400">
+                      Snacks
+                    </h2>
+                    <ProductGrid items={itemsPorCategoria.snacks} onUpdateQuantity={handleUpdateQuantity} order={order} />
+                  </>
+                )}
+
+                {itemsPorCategoria.noDisponibles.length > 0 && (
+                  <>
+                    <h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-white/70">
+                      No Disponibles
+                    </h2>
+                    <ProductGrid
+                      items={itemsPorCategoria.noDisponibles}
+                      onUpdateQuantity={() => {}}
+                      order={order}
+                      disabled={true}
+                    />
+                  </>
+                )}
+
+                {items.length === 0 && !loadingItems && (
+                  <div className="text-center py-10">
+                    <p className="text-white/70">No hay items en el menú.</p>
+                  </div>
+                )}
               </>
             )}
           </TabsContent>
@@ -494,7 +554,9 @@ export default function Home() {
       <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetTrigger asChild>
           {order.length > 0 && (
-             <motion.div initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} className="fixed bottom-4 right-4 z-50">
+            <motion.div initial={{ opacity: 0, y: 100 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="fixed bottom-4 right-4 z-50">
               <Button 
                 variant="default" 
                 className="bg-white text-black rounded-full h-16 w-auto p-4 shadow-lg text-lg hover:bg-white/90"
@@ -509,37 +571,47 @@ export default function Home() {
         <SheetContent className="bg-white text-neutral-900">
           <SheetHeader>
             <SheetTitle className="font-aventura text-2xl text-neutral-900">Tu Pedido</SheetTitle>
-            <SheetDescription className="text-neutral-600">Confirma tu selección. Es cortesía de la casa.</SheetDescription>
+            <SheetDescription className="text-neutral-600">
+              Confirma tu selección. Es cortesía de la casa.
+            </SheetDescription>
           </SheetHeader>
+          
           <div className="py-4 space-y-4">
-            {order.length === 0 ? (<p className="text-neutral-500">Aún no has seleccionado nada.</p>) : (
+            {order.length === 0 ? (
+              <p className="text-neutral-500">Aún no has seleccionado nada.</p>
+            ) : (
               order.map(item => (
                 <div key={item.id} className="flex justify-between items-center">
                   <div>
                     <p className="font-semibold text-neutral-900">{item.nombre}</p>
-                    
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => handleUpdateQuantity(item, 'dec')}><MinusCircle className="h-4 w-4" /></Button>
-                    <span className="w-8 text-center font-bold text-neutral-900">{item.quantity}</span>
+                    <Button variant="outline" size="icon" className="h-8 w-8"
+                      onClick={() => handleUpdateQuantity(item, 'dec')}>
+                      <MinusCircle className="h-4 w-4" />
+                    </Button>
+                    <span className="w-8 text-center font-bold text-neutral-900">
+                      {item.quantity}
+                    </span>
                   </div>
                 </div>
               ))
             )}
           </div>
-          {/* --- ✨ Footer del Carrito Actualizado --- */}
+          
           <SheetFooter className="flex flex-col gap-2">
             <Button 
               type="submit" 
               variant="secondary" 
               className="w-full" 
-              disabled={isSubmitting || order.length === 0 || isOrderBlocked} // ✨ Bloqueado aquí
+              disabled={isSubmitting || order.length === 0 || isOrderBlocked}
               onClick={handleSubmitOrder}
             >
-              {isSubmitting ? 'Confirmando...' : (isOrderBlocked ? 'Pedido Bloqueado' : 'Confirmar Pedido')}
+              {isSubmitting 
+                ? 'Confirmando...' 
+                : (isOrderBlocked ? 'Pedido Bloqueado' : 'Confirmar Pedido')}
             </Button>
             
-            {/* Mensaje de error si está bloqueado */}
             {isOrderBlocked && order.length > 0 && (
               <p className="text-sm text-red-600 text-center">{finalBlockReason}</p>
             )}
@@ -550,9 +622,12 @@ export default function Home() {
   );
 }
 
-// ----- Componentes Auxiliares -----
+
+// ----------------------------------------------------------
+// WIDGETS Y COMPONENTES AUXILIARES
+// ----------------------------------------------------------
+
 function OrderLockWidget({ loading, isBlocked, reason }: { loading: boolean, isBlocked: boolean, reason: string | null }) {
-  // No mostrar nada si estamos cargando o si no hay bloqueo
   if (loading || !isBlocked || !reason) return null;
 
   return (
@@ -570,18 +645,15 @@ function OrderLockWidget({ loading, isBlocked, reason }: { loading: boolean, isB
   );
 }
 
-// ✨ Widget de Ranking (Sin cambios, ahora recibe data real)
 function RankingWidget({ loading, ranking }: { loading: boolean, ranking: number | null }) {
-  if (loading) {
+  if (loading)
     return (
       <div className="text-center py-6">
         <Loader2 className="h-8 w-8 mx-auto animate-spin text-white/70" />
         <p className="text-white/70 mt-2">Cargando tu ranking...</p>
       </div>
     );
-  }
 
-  // No muestra nada si el usuario no tiene ranking (o tuvo 0 pedidos)
   if (!ranking) return null;
 
   return (
@@ -595,12 +667,14 @@ function RankingWidget({ loading, ranking }: { loading: boolean, ranking: number
           </p>
         </div>
       </div>
-      <div className="absolute -top-2 -right-2 bg-yellow-300 w-16 h-16 transform rotate-45" style={{ filter: 'opacity(0.5)' }}></div>
+      <div
+        className="absolute -top-2 -right-2 bg-yellow-300 w-16 h-16 transform rotate-45"
+        style={{ filter: 'opacity(0.5)' }}
+      ></div>
     </div>
   );
 }
 
-// ✨ Diálogo para Cambiar Contraseña (Llamada RPC real)
 function ChangePasswordDialog({ user }: { user: SessionUser | null }) {
   const [isOpen, setIsOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -611,26 +685,32 @@ function ChangePasswordDialog({ user }: { user: SessionUser | null }) {
     if (!user) return;
 
     if (!newPassword || !confirmPassword) {
-      toast({ title: 'Campos vacíos', description: 'Por favor, ingresa y repite la contraseña.', variant: 'destructive' });
+      toast({
+        title: 'Campos vacíos',
+        description: 'Por favor, ingresa y repite la contraseña.',
+        variant: 'destructive'
+      });
       return;
     }
     if (newPassword.length < 6) {
-       toast({ title: 'Contraseña muy corta', description: 'Debe tener al menos 6 caracteres.', variant: 'destructive' });
-       return;
+      toast({
+        title: 'Contraseña muy corta',
+        description: 'Debe tener al menos 6 caracteres.',
+        variant: 'destructive'
+      });
+      return;
     }
     if (newPassword !== confirmPassword) {
-      toast({ title: 'Las contraseñas no coinciden', description: 'Por favor, verifica la contraseña.', variant: 'destructive' });
+      toast({
+        title: 'Las contraseñas no coinciden',
+        description: 'Por favor, verifica la contraseña.',
+        variant: 'destructive'
+      });
       return;
     }
     
     setIsSubmitting(true);
-    
-    // 
-    // --- IMPORTANTE ---
-    // Aún necesitas crear la función RPC 'update_user_password' en Supabase
-    // para que esto funcione.
-    //
-    
+
     const { error } = await supabase.rpc('update_user_password', {
       p_user_id: user.id,
       p_new_password: newPassword
@@ -654,13 +734,17 @@ function ChangePasswordDialog({ user }: { user: SessionUser | null }) {
           <KeyRound className="h-5 w-5" />
         </Button>
       </DialogTrigger>
+
       <DialogContent className="bg-white text-neutral-900">
         <DialogHeader>
-          <DialogTitle className="font-aventura text-2xl text-neutral-900">Cambiar Contraseña</DialogTitle>
+          <DialogTitle className="font-aventura text-2xl text-neutral-900">
+            Cambiar Contraseña
+          </DialogTitle>
           <DialogDescription className="text-neutral-600">
             Ingresa tu nueva contraseña.
           </DialogDescription>
         </DialogHeader>
+
         <div className="py-4 space-y-4">
           <Input
             type="password"
@@ -669,6 +753,7 @@ function ChangePasswordDialog({ user }: { user: SessionUser | null }) {
             onChange={(e) => setNewPassword(e.target.value)}
             className="bg-gray-100 text-neutral-900"
           />
+
           <Input
             type="password"
             placeholder="Repetir Contraseña"
@@ -677,6 +762,7 @@ function ChangePasswordDialog({ user }: { user: SessionUser | null }) {
             className="bg-gray-100 text-neutral-900"
           />
         </div>
+
         <DialogFooter>
           <Button variant="secondary" className="w-full" onClick={handleSubmit} disabled={isSubmitting}>
             {isSubmitting ? "Actualizando..." : "Actualizar Contraseña"}
@@ -687,33 +773,69 @@ function ChangePasswordDialog({ user }: { user: SessionUser | null }) {
   );
 }
 
-// ----- Componente: Cuadrícula de Productos -----
-function ProductGrid({ items, onUpdateQuantity, order, disabled = false }: { items: Item[], onUpdateQuantity: (item: Item, action: 'inc' | 'dec') => void, order: OrderItem[], disabled?: boolean }) {
+function ProductGrid({
+  items,
+  onUpdateQuantity,
+  order,
+  disabled = false
+}: {
+  items: Item[];
+  onUpdateQuantity: (item: Item, action: 'inc' | 'dec') => void;
+  order: OrderItem[];
+  disabled?: boolean;
+}) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
       {items.map(item => {
         const itemInOrder = order.find(i => i.id === item.id);
         const quantity = itemInOrder?.quantity || 0;
-        
+
         return (
-          <Card key={item.id} className={`dashboard-card flex flex-col justify-between ${disabled ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
-            <CardHeader className="p-0"><img src={item.image_url || 'https://placehold.co/600x400/002E45/FF6900?text=Caf%C3%A9'} alt={item.nombre} className="rounded-t-lg aspect-video object-cover" /></CardHeader>
+          <Card key={item.id}
+            className={`dashboard-card flex flex-col justify-between ${disabled ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
+            
+            <CardHeader className="p-0">
+              <img
+                src={item.image_url || 'https://placehold.co/600x400/002E45/FF6900?text=Café'}
+                alt={item.nombre}
+                className="rounded-t-lg aspect-video object-cover"
+              />
+            </CardHeader>
+
             <CardContent className="p-4 flex-grow">
               <CardTitle className="font-aventura text-lg">{item.nombre}</CardTitle>
-              <CardDescription className="text-sm mt-1 opacity-80">{item.description}</CardDescription>
+              <CardDescription className="text-sm mt-1 opacity-80">
+                {item.description}
+              </CardDescription>
             </CardContent>
+
             <div className="p-4 pt-0">
               {quantity === 0 ? (
-                <Button className="w-full" variant="secondary" onClick={() => onUpdateQuantity(item, 'inc')} disabled={disabled}>
+                <Button 
+                  className="w-full" 
+                  variant="secondary" 
+                  onClick={() => onUpdateQuantity(item, 'inc')}
+                  disabled={disabled}
+                >
                   Seleccionar
                 </Button>
               ) : (
                 <div className="flex items-center gap-2 justify-center">
-                  <Button variant="outline" size="icon" className="h-10 w-10" onClick={() => onUpdateQuantity(item, 'dec')}><MinusCircle className="h-5 w-5" /></Button>
-                  <span className="w-10 text-center text-xl font-bold">{quantity}</span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10"
+                    onClick={() => onUpdateQuantity(item, 'dec')}>
+                    <MinusCircle className="h-5 w-5" />
+                  </Button>
+
+                  <span className="w-10 text-center text-xl font-bold">
+                    {quantity}
+                  </span>
                 </div>
               )}
             </div>
+
           </Card>
         );
       })}
@@ -721,7 +843,6 @@ function ProductGrid({ items, onUpdateQuantity, order, disabled = false }: { ite
   );
 }
 
-// --- Componente para mostrar el ESTADO del Pedido ---
 function PedidosActivosWidget({ loading, activos }: { loading: boolean, activos: Pedido[] }) {
   if (loading && activos.length === 0) {
     return (
@@ -731,24 +852,50 @@ function PedidosActivosWidget({ loading, activos }: { loading: boolean, activos:
       </div>
     );
   }
+
   if (!loading && activos.length === 0) return null;
-  
+
   const getStatusInfo = (estado: string) => {
-    if (estado === 'pendiente') return { text: 'Pedido Recibido', icon: <Loader2 className="h-4 w-4 animate-spin text-yellow-400" /> };
-    if (estado === 'preparando') return { text: 'Preparando ☕', icon: <Coffee className="h-4 w-4 text-blue-400" /> };
-    if (estado === 'listo') return { text: '¡Listo para retirar, Acérquese a retirar su pedido! 🍶', icon: <ShoppingBag className="h-4 w-4 text-green-400" /> };
+    if (estado === 'pendiente')
+      return { text: 'Pedido Recibido', icon: <Loader2 className="h-4 w-4 animate-spin text-yellow-400" /> };
+    if (estado === 'preparando')
+      return { text: 'Preparando ☕', icon: <Coffee className="h-4 w-4 text-blue-400" /> };
+    if (estado === 'listo')
+      return { text: '¡Listo para retirar! 🍶', icon: <ShoppingBag className="h-4 w-4 text-green-400" /> };
     return { text: 'Desconocido', icon: <></> };
   };
 
   return (
     <div className="space-y-4 mt-6 mb-8">
       <h3 className="font-aventura text-xl font-bold text-white">Tu Pedido en Curso</h3>
+
       {activos.map(pedido => {
         const status = getStatusInfo(pedido.estado);
+
         return (
           <Card key={pedido.id} className="dashboard-card border-l-4 border-unemi-orange">
-            <CardHeader><CardTitle className={`font-aventura text-lg flex justify-between items-center text-white`}><span className="flex items-center gap-2">{status.icon}{status.text}</span></CardTitle><CardDescription className="text-white/70">Realizado {new Date(pedido.created_at).toLocaleString('es-EC', { hour: '2-digit', minute: '2-digit' })}</CardDescription></CardHeader>
-            <CardContent><ul className="list-disc pl-5 text-white/70 text-sm">{pedido.items.map((item, idx) => (<li key={idx}>{item.cantidad}x {item.item_nombre}</li>))}</ul></CardContent>
+            <CardHeader>
+              <CardTitle className="font-aventura text-lg flex justify-between items-center text-white">
+                <span className="flex items-center gap-2">
+                  {status.icon}
+                  {status.text}
+                </span>
+              </CardTitle>
+              <CardDescription className="text-white/70">
+                Realizado {new Date(pedido.created_at).toLocaleString('es-EC', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent>
+              <ul className="list-disc pl-5 text-white/70 text-sm">
+                {pedido.items.map((item, idx) => (
+                  <li key={idx}>{item.cantidad}x {item.item_nombre}</li>
+                ))}
+              </ul>
+            </CardContent>
           </Card>
         );
       })}
@@ -756,30 +903,57 @@ function PedidosActivosWidget({ loading, activos }: { loading: boolean, activos:
   );
 }
 
-// ----- Componente: Lista de Historial -----
-function PedidosHistorialList({ user, loading, historial, onRatingSuccess }: { user: SessionUser | null, loading: boolean, historial: Pedido[], onRatingSuccess: () => void }) {
+function PedidosHistorialList({
+  user,
+  loading,
+  historial,
+  onRatingSuccess
+}: {
+  user: SessionUser | null;
+  loading: boolean;
+  historial: Pedido[];
+  onRatingSuccess: () => void;
+}) {
   if (loading) {
-    return <div className="text-center py-10"><History className="h-12 w-12 mx-auto animate-spin text-white/70" /><p className="text-white/70 mt-2">Cargando historial...</p></div>;
+    return (
+      <div className="text-center py-10">
+        <History className="h-12 w-12 mx-auto animate-spin text-white/70" />
+        <p className="text-white/70 mt-2">Cargando historial...</p>
+      </div>
+    );
   }
   
   return (
     <div className="space-y-8 mt-6">
       <div>
-        <h3 className="font-aventura text-xl font-bold mb-4 text-white">Historial de Pedidos</h3>
-        {historial.length === 0 && <p className="text-white/70">Aún no tienes historial de pedidos.</p>}
+        <h3 className="font-aventura text-xl font-bold mb-4 text-white">
+          Historial de Pedidos
+        </h3>
+
+        {historial.length === 0 && (
+          <p className="text-white/70">Aún no tienes historial de pedidos.</p>
+        )}
+
         <div className="space-y-4">
           {historial.map(pedido => (
             <Card key={pedido.id} className="dashboard-card opacity-70">
               <CardHeader>
                 <CardTitle className="font-aventura text-white/70">Entregado</CardTitle>
-                <CardDescription className="text-white/70">Pedido del {new Date(pedido.created_at).toLocaleString('es-EC', { day: '2-digit', month: 'long' })}</CardDescription>
+                <CardDescription className="text-white/70">
+                  Pedido del {new Date(pedido.created_at).toLocaleString('es-EC', {
+                    day: '2-digit',
+                    month: 'long'
+                  })}
+                </CardDescription>
               </CardHeader>
+
               <CardContent>
                 <ul className="list-disc pl-5 text-white/70 text-sm mb-4">
                   {pedido.items.map((item, idx) => (
                     <li key={idx}>{item.cantidad}x {item.item_nombre}</li>
                   ))}
                 </ul>
+
                 <RatingDialog 
                   user={user} 
                   pedidoId={pedido.id}
@@ -795,7 +969,6 @@ function PedidosHistorialList({ user, loading, historial, onRatingSuccess }: { u
   );
 }
 
-// ----- Componente: Diálogo de Sugerencias -----
 function SugerenciasDialog({ user }: { user: SessionUser | null }) {
   const [isOpen, setIsOpen] = useState(false);
   const [mensaje, setMensaje] = useState("");
@@ -803,15 +976,28 @@ function SugerenciasDialog({ user }: { user: SessionUser | null }) {
 
   const handleSubmit = async () => {
     if (!user || !mensaje.trim()) return;
+
     setIsSubmitting(true);
-    const { error } = await supabase.from('sugerencias_pwa').insert({ user_id: user.id, mensaje: mensaje.trim() });
+
+    const { error } = await supabase
+      .from('sugerencias_pwa')
+      .insert({ user_id: user.id, mensaje: mensaje.trim() });
+
     if (error) {
-      toast({ title: 'Error al enviar', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Error al enviar',
+        description: error.message,
+        variant: 'destructive'
+      });
     } else {
-      toast({ title: '¡Gracias!', description: 'Tu sugerencia ha sido enviada.' });
+      toast({
+        title: '¡Gracias!',
+        description: 'Tu sugerencia ha sido enviada.'
+      });
       setMensaje("");
       setIsOpen(false);
     }
+
     setIsSubmitting(false);
   };
 
@@ -822,13 +1008,17 @@ function SugerenciasDialog({ user }: { user: SessionUser | null }) {
           <MessageSquare className="h-5 w-5" />
         </Button>
       </DialogTrigger>
+
       <DialogContent className="bg-white text-neutral-900">
         <DialogHeader>
-          <DialogTitle className="font-aventura text-2xl text-neutral-900">Sugerencias y Comentarios</DialogTitle>
+          <DialogTitle className="font-aventura text-2xl text-neutral-900">
+            Sugerencias y Comentarios
+          </DialogTitle>
           <DialogDescription className="text-neutral-600">
-            Ayúdanos a mejorar. ¿Qué te gustaría ver? ¿Cómo podemos mejorar?
+            Ayúdanos a mejorar. ¿Qué te gustaría ver?
           </DialogDescription>
         </DialogHeader>
+
         <div className="py-4">
           <Textarea
             placeholder="Escribe tu comentario aquí..."
@@ -837,8 +1027,14 @@ function SugerenciasDialog({ user }: { user: SessionUser | null }) {
             className="bg-gray-100 text-neutral-900"
           />
         </div>
+
         <DialogFooter>
-          <Button variant="secondary" className="w-full" onClick={handleSubmit} disabled={isSubmitting || !mensaje.trim()}>
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={handleSubmit}
+            disabled={isSubmitting || !mensaje.trim()}
+          >
             {isSubmitting ? "Enviando..." : "Enviar Sugerencia"}
           </Button>
         </DialogFooter>
@@ -847,47 +1043,69 @@ function SugerenciasDialog({ user }: { user: SessionUser | null }) {
   );
 }
 
-// ----- Componente: Diálogo de Calificación -----
-function RatingDialog({ user, pedidoId, initialCalificado, onRatingSuccess }: { user: SessionUser | null, pedidoId: string, initialCalificado: boolean, onRatingSuccess: () => void }) {
+function RatingDialog({
+  user,
+  pedidoId,
+  initialCalificado,
+  onRatingSuccess
+}: {
+  user: SessionUser | null;
+  pedidoId: string;
+  initialCalificado: boolean;
+  onRatingSuccess: () => void;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [rating, setRating] = useState(0);
   const [comentario, setComentario] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [yaCalificado, setYaCalificado] = useState(initialCalificado);
 
-  useEffect(() => {
-    setYaCalificado(initialCalificado);
-  }, [initialCalificado]);
+  useEffect(() => setYaCalificado(initialCalificado), [initialCalificado]);
 
   const handleSubmit = async () => {
     if (!user || rating === 0) return;
+
     setIsSubmitting(true);
+
     try {
-      const { error: ratingError } = await supabase.from('calificaciones_pwa').insert({
-        user_id: user.id,
-        pedido_id: pedidoId,
-        estrellas: rating,
-        comentario: comentario.trim()
-      });
+      const { error: ratingError } =
+        await supabase.from('calificaciones_pwa').insert({
+          user_id: user.id,
+          pedido_id: pedidoId,
+          estrellas: rating,
+          comentario: comentario.trim()
+        });
+
       if (ratingError) throw ratingError;
 
-      const { error: updateError } = await supabase
-        .from('pedidos_pwa')
-        .update({ calificado: true })
-        .eq('id', pedidoId);
+      const { error: updateError } =
+        await supabase
+          .from('pedidos_pwa')
+          .update({ calificado: true })
+          .eq('id', pedidoId);
+
       if (updateError) throw updateError;
-      
+
       toast({ title: '¡Gracias!', description: 'Tu calificación ha sido enviada.' });
+
       setIsOpen(false);
       setYaCalificado(true);
       onRatingSuccess();
-      
+
     } catch (error: any) {
       if (error.code === '23505') {
-        toast({ title: 'Error', description: 'Ya has calificado este pedido.', variant: 'destructive' });
+        toast({
+          title: 'Error',
+          description: 'Ya has calificado este pedido.',
+          variant: 'destructive'
+        });
         setYaCalificado(true);
       } else {
-        toast({ title: 'Error al enviar', description: error.message, variant: 'destructive' });
+        toast({
+          title: 'Error al enviar',
+          description: error.message,
+          variant: 'destructive'
+        });
       }
     } finally {
       setIsSubmitting(false);
@@ -901,33 +1119,49 @@ function RatingDialog({ user, pedidoId, initialCalificado, onRatingSuccess }: { 
           {yaCalificado ? "Calificado" : "Calificar Servicio"}
         </Button>
       </DialogTrigger>
+
       <DialogContent className="bg-white text-neutral-900">
         <DialogHeader>
-          <DialogTitle className="font-aventura text-2xl text-neutral-900">Califica tu Pedido</DialogTitle>
+          <DialogTitle className="font-aventura text-2xl text-neutral-900">
+            Califica tu Pedido
+          </DialogTitle>
           <DialogDescription className="text-neutral-600">
-            Tu opinión nos ayuda a mejorar. ¿Cómo estuvo todo?
+            Tu opinión nos ayuda a mejorar.
           </DialogDescription>
         </DialogHeader>
-        
+
         {yaCalificado ? (
-          <p className="text-neutral-600 py-8 text-center">Ya has calificado este pedido. ¡Gracias!</p>
+          <p className="text-neutral-600 py-8 text-center">
+            Ya has calificado este pedido. ¡Gracias!
+          </p>
         ) : (
           <>
             <div className="py-4 flex justify-center gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button key={star} onClick={() => setRating(star)}>
-                  <Star className={`h-8 w-8 ${rating >= star ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
+                  <Star
+                    className={`h-8 w-8 ${
+                      rating >= star ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'
+                    }`}
+                  />
                 </button>
               ))}
             </div>
+
             <Textarea
               placeholder="¿Algún comentario adicional? (Opcional)"
               value={comentario}
               onChange={(e) => setComentario(e.target.value)}
               className="bg-gray-100 text-neutral-900"
             />
+
             <DialogFooter>
-              <Button variant="secondary" className="w-full" onClick={handleSubmit} disabled={isSubmitting || rating === 0}>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={handleSubmit}
+                disabled={isSubmitting || rating === 0}
+              >
                 {isSubmitting ? "Enviando..." : `Enviar Calificación (${rating} Estrellas)`}
               </Button>
             </DialogFooter>
@@ -938,8 +1172,17 @@ function RatingDialog({ user, pedidoId, initialCalificado, onRatingSuccess }: { 
   );
 }
 
-// ----- Componente: Modal de Cumpleaños -----
-function BirthdayModal({ isOpen, onClose, name, age }: { isOpen: boolean, onClose: () => void, name: string, age: number | null }) {
+function BirthdayModal({
+  isOpen,
+  onClose,
+  name,
+  age
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  name: string;
+  age: number | null;
+}) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="bg-white text-neutral-900 overflow-hidden p-0">
@@ -950,15 +1193,18 @@ function BirthdayModal({ isOpen, onClose, name, age }: { isOpen: boolean, onClos
           >
             <Cake className="h-16 w-16 text-unemi-orange mx-auto" />
           </motion.div>
+
           <DialogTitle className="font-aventura text-3xl text-neutral-900">
             ¡Feliz {age ? `${age} ` : ''}Cumpleaños, {name}!
           </DialogTitle>
+
           <DialogDescription className="text-neutral-600">
             ¡De parte de toda la cafetería, te deseamos un día increíble! 🎈
             <br />
             Pasa por tu bebida de cortesía.
           </DialogDescription>
         </div>
+
         <DialogFooter className="p-4 bg-gray-50">
           <Button variant="secondary" className="w-full" onClick={onClose}>
             ¡Muchas Gracias!

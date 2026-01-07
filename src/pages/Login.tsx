@@ -12,9 +12,9 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/components/hooks/use-toast';
 
 // Tus Imágenes
-import adminBgDesktop from '/assets/admin-bg-navidad.png';
-import adminBgMobile from '/assets/movil-bg-navidad.png';
-import logo from '/assets/logo-admin-navidad.png';
+import adminBgDesktop from '/assets/admin-bg-ordinario.png';
+import adminBgMobile from '/assets/movil-bg-ordinario.png';
+import logo from '/assets/logo-admin-ordinario.png';
 
 type FormState = 'Login' | 'CheckEmail' | 'Register';
 

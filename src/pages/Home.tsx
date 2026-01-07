@@ -6,9 +6,9 @@ import type { SessionUser } from '@/context/AuthContext';
 import { supabase } from '@/services/supabaseClient';
 
 // --- Tus Imágenes de Fondo y Logo ---
-import adminBgDesktop from '/assets/admin-bg-navidad.png';
-import adminBgMobile from '/assets/movil-bg-navidad.png';
-import logo from '/assets/logo-admin-navidad.png';
+import adminBgDesktop from '/assets/admin-bg-ordinario.png';
+import adminBgMobile from '/assets/movil-bg-ordinario.png';
+import logo from '/assets/logo-admin-ordinario.png';
 
 // --- Componentes de UI ---
 import { Button } from '@/components/ui/button';

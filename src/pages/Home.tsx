@@ -292,7 +292,7 @@ export default function Home() {
           table: 'pedidos_pwa',
           filter: `user_id=eq.${user.id}`,
         },
-        (payload) => {
+        () => {
           // 🔥 Cualquier cambio se refleja inmediatamente
           fetchPedidos();
         }

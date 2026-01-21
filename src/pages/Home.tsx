@@ -73,6 +73,16 @@ const getHorarioHoy = (horarioArr: string[]): string => {
 // ✨ Tipo para el motivo del bloqueo
 type BlockReasonCode = "TIME_LOCK" | "RATING_LOCK";
 
+const playReadySound = async () => {
+  try {
+    const audio = new Audio('/sounds/pedido-listo.mp3');
+    audio.volume = 0.8;
+    await audio.play();
+  } catch (e) {
+    console.warn('No se pudo reproducir sonido', e);
+  }
+};
+
 export default function Home() {
   const { user, logout, refreshUser } = useAuth();
   
@@ -107,6 +117,12 @@ export default function Home() {
   const [cafeterias, setCafeterias] = useState<Cafeteria[]>([]);
 
   const [activeTab, setActiveTab] = useState<'menu' | 'pedidos'>('menu');
+
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
 
   // --- Efectos de Fondo ---
   useEffect(() => {
@@ -302,7 +318,37 @@ export default function Home() {
           table: 'pedidos_pwa',
           filter: `user_id=eq.${user.id}`,
         },
-        () => fetchPedidos()
+        async (payload) => {
+          const nuevo = payload.new as any;
+          const anterior = payload.old as any;
+
+          // 🔒 Detectar transición real a LISTO
+          const pasoAListo =
+            anterior?.estado !== 'listo' && nuevo?.estado === 'listo';
+
+          if (pasoAListo) {
+            // 🔊 Sonido
+            await playReadySound();
+
+            // 🔔 Toast visual
+            toast({
+              title: '☕ ¡Tu pedido está listo!',
+              description: 'Puedes pasar a retirarlo.',
+            });
+
+            // 🔔 Notificación push
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('Pedido listo ☕', {
+                body: 'Tu pedido ya está listo para retirar.',
+                icon: '/assets/logo-notif.png',
+                badge: '/assets/logo-notif.png',
+              });
+            }
+          }
+
+          // 🔄 Siempre refrescar pedidos
+          fetchPedidos();
+        }
       )
       .on(
         'postgres_changes',

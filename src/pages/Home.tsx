@@ -256,19 +256,61 @@ export default function Home() {
       `)
       .eq('user_id', user.id)
       .eq('cafeteria_id', cafeteriaActivaId)
-      .order('created_at', { ascending: false });
+      .order('updated_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching pedidos:', error.message);
-    } else if (data) {
-      setPedidosActivos(
-        data.filter(p => ['pendiente', 'preparando', 'listo'].includes(p.estado))
-      );
-      setPedidosHistorial(
-        data.filter(p => p.estado === 'entregado')
-      );
+      return;
     }
+
+    const normalized = [...(data ?? [])]; // 🔑 rompe referencia
+
+    setPedidosActivos(
+      normalized.filter(p =>
+        ['pendiente', 'preparando', 'listo'].includes(p.estado)
+      )
+    );
+
+    setPedidosHistorial(
+      normalized.filter(p => p.estado === 'entregado')
+    );
   };
+
+  useEffect(() => {
+    if (!user || !cafeteriaActivaId) return;
+
+    const channel = supabase
+      .channel(`pedidos-home-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pedidos_pwa',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          // 🔥 Cualquier cambio se refleja inmediatamente
+          fetchPedidos();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pedido_pwa_items',
+        },
+        () => {
+          fetchPedidos();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, cafeteriaActivaId]);
 
   useEffect(() => {
     if (!cafeteriaActivaId) return;
@@ -312,7 +354,7 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !cafeteriaActivaId) return;
 
     const loadInitialPedidos = async () => {
       try {
@@ -326,13 +368,8 @@ export default function Home() {
     };
 
     loadInitialPedidos();
+  }, [user?.id, cafeteriaActivaId]);
 
-    const intervalId = setInterval(() => {
-      fetchPedidos();
-    }, 5000);
-
-    return () => clearInterval(intervalId);
-  }, [user]);
 
   // --- Lógica de bloqueo ---
   useEffect(() => {

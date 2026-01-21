@@ -106,6 +106,8 @@ export default function Home() {
 
   const [cafeterias, setCafeterias] = useState<Cafeteria[]>([]);
 
+  const [activeTab, setActiveTab] = useState<'menu' | 'pedidos'>('menu');
+
   // --- Efectos de Fondo ---
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -258,22 +260,23 @@ export default function Home() {
       .eq('cafeteria_id', cafeteriaActivaId)
       .order('updated_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching pedidos:', error.message);
-      return;
+    if (error) return;
+
+    const normalized = [...(data ?? [])];
+
+    const activos = normalized.filter(p =>
+      ['pendiente', 'preparando', 'listo'].includes(p.estado)
+    );
+
+    const historial = normalized.filter(p => p.estado === 'entregado');
+
+    setPedidosActivos(activos);
+    setPedidosHistorial(historial);
+
+    // 🔥 Si ya no hay activos y hay historial → ir a "Mis Pedidos"
+    if (activos.length === 0 && historial.length > 0) {
+      setActiveTab('pedidos');
     }
-
-    const normalized = [...(data ?? [])]; // 🔑 rompe referencia
-
-    setPedidosActivos(
-      normalized.filter(p =>
-        ['pendiente', 'preparando', 'listo'].includes(p.estado)
-      )
-    );
-
-    setPedidosHistorial(
-      normalized.filter(p => p.estado === 'entregado')
-    );
   };
 
   useEffect(() => {
@@ -662,7 +665,7 @@ export default function Home() {
       />
 
       <main className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="menu" className="w-full">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
           <TabsList className="grid w-full grid-cols-2 bg-white/10 border border-white/20">
             <TabsTrigger value="menu"
               className="data-[state=active]:bg-unemi-orange data-[state=active]:text-white text-white">

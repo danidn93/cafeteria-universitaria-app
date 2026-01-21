@@ -544,26 +544,29 @@ export default function Home() {
                 <span>{config?.abierto ? 'Abierta' : 'Cerrada'}</span>
               </div>
             </div>
-            <Select
-              value={cafeteriaActivaId ?? ""}
-              onValueChange={(value) => setCafeteriaActivaId(value)}
-            >
-              <SelectTrigger className="w-full bg-white text-black border border-gray-300">
-                <SelectValue placeholder="Selecciona cafetería" />
-              </SelectTrigger>
+            {/* Mostrar selector solo si el usuario tiene más de una cafetería */}
+            {cafeterias.length > 1 && (
+              <Select
+                value={cafeteriaActivaId ?? ""}
+                onValueChange={(value) => setCafeteriaActivaId(value)}
+              >
+                <SelectTrigger className="w-full bg-white text-black border border-gray-300">
+                  <SelectValue placeholder="Selecciona cafetería" />
+                </SelectTrigger>
 
-              <SelectContent className="bg-white text-neutral-900 border border-gray-200">
-                {cafeterias.map((c) => (
-                  <SelectItem
-                    key={c.id}
-                    value={c.id}
-                    className="cursor-pointer focus:bg-gray-100 focus:text-neutral-900"
-                  >
-                    {c.nombre_local}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <SelectContent className="bg-white text-neutral-900 border border-gray-200">
+                  {cafeterias.map((c) => (
+                    <SelectItem
+                      key={c.id}
+                      value={c.id}
+                      className="cursor-pointer focus:bg-gray-100 focus:text-neutral-900"
+                    >
+                      {c.nombre_local}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
         </div>
 
         <div className="flex items-center gap-2">

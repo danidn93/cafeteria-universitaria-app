@@ -460,6 +460,15 @@ export default function Home() {
       return;
     }
 
+    if (!config?.abierto) {
+      toast({
+        title: 'Cafetería cerrada',
+        description: 'La cafetería no está atendiendo en este momento.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (!cafeteriaActivaId) {
       toast({
         title: 'Selecciona cafetería',
@@ -498,6 +507,15 @@ export default function Home() {
   };
 
   const handleSubmitOrder = async () => {
+
+    if (!config?.abierto) {
+      toast({
+        title: 'Cafetería cerrada',
+        description: 'No se pueden realizar pedidos porque la cafetería está cerrada.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     if (isOrderBlocked) {
        toast({
@@ -815,12 +833,21 @@ export default function Home() {
               type="submit" 
               variant="secondary" 
               className="w-full" 
-              disabled={isSubmitting || order.length === 0 || isOrderBlocked}
+              disabled={
+                isSubmitting ||
+                order.length === 0 ||
+                isOrderBlocked ||
+                !config?.abierto
+              }
               onClick={handleSubmitOrder}
             >
-              {isSubmitting 
-                ? 'Confirmando...' 
-                : (isOrderBlocked ? 'Pedido Bloqueado' : 'Confirmar Pedido')}
+              {isSubmitting
+                ? 'Confirmando...'
+                : !config?.abierto
+                ? 'Cafetería cerrada'
+                : isOrderBlocked
+                ? 'Pedido Bloqueado'
+                : 'Confirmar Pedido'}
             </Button>
             
             {isOrderBlocked && order.length > 0 && (

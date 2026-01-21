@@ -9,6 +9,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: 'auto',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      devOptions: {
+        enabled: true, // <--- ESTO ES CLAVE
+        type: 'module',
+      },
       manifest: {
         name: 'Cafetería UNEMI',
         short_name: 'Café App',

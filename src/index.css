@@ -401,3 +401,17 @@ All colors MUST be HSL.
     0 0 0 3px hsl(var(--unemi-orange));                 /* #FF6900 */
 }
 
+select {
+  color: #000000;
+  background-color: #ffffff;
+}
+
+select option {
+  color: #000000;
+  background-color: #ffffff;
+}
+
+select option:checked {
+  color: #000000;
+  background-color: #ffffff;
+}

@@ -22,8 +22,9 @@ export type SessionUser = {
   direccion_id: string | null;
   direccion_slug: string | null;
 
-  cafeteria_ids: string[]; // 👈 CLAVE
+  cafeteria_ids: string[];
   fecha_nacimiento: string | null;
+  phone: string | null;
 };
 
 interface AuthContextType {
@@ -45,6 +46,8 @@ interface AuthContextType {
     message: string;
   }>;
   logout: () => void;
+
+  refreshUser: () => Promise<void>; // ✅ CLAVE
 }
 
 /* =========================
@@ -55,7 +58,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  if (!ctx) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
   return ctx;
 };
 
@@ -125,6 +130,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /* =========================
+     REFRESH USER (CLAVE)
+  ========================= */
+
+  const refreshUser = async () => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('app_users')
+      .select(`
+        id,
+        username,
+        name,
+        role,
+        phone,
+        fecha_nacimiento,
+        cafeteria_ids,
+        direccion_id,
+        direcciones ( slug )
+      `)
+      .eq('id', user.id)
+      .single();
+
+    if (error || !data) {
+      console.error('Error refreshing user:', error);
+      return;
+    }
+
+    const updatedUser: SessionUser = {
+      ...user,
+      ...data,
+      direccion_slug: data.direcciones?.[0]?.slug ?? null,
+    };
+
+    setUser(updatedUser);
+
+    Cookies.set('app_session', JSON.stringify(updatedUser), {
+      expires: 7,
+      sameSite: 'lax',
+    });
+  };
+
+  /* =========================
      CHECK EMAIL
   ========================= */
 
@@ -181,6 +228,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     [user]
   );
 
+  /* =========================
+     CONTEXT VALUE
+  ========================= */
+
   const value: AuthContextType = {
     isAuthenticated: !!user,
     user,
@@ -188,10 +239,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     esAdminAC,
     esAdminTH,
     login,
+    refreshUser,
     checkEmail,
     register,
     logout,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 };

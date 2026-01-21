@@ -19,6 +19,15 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input"; 
 import { toast } from '@/components/hooks/use-toast';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import { Settings, RefreshCw } from "lucide-react";
 
 // --- Iconos ---
 import { Cake, Coffee, LogOut, MinusCircle, ShoppingBag, Clock, History, MessageSquare, Loader2, Star, KeyRound, Trophy, Timer } from 'lucide-react';
@@ -50,6 +59,11 @@ interface Config {
   horario_arr: string[];
 }
 
+interface Cafeteria {
+  id: string;
+  nombre_local: string;
+}
+
 const getHorarioHoy = (horarioArr: string[]): string => {
   const dayIndex = new Date().getDay();
   const todayIndex = (dayIndex + 6) % 7;
@@ -60,7 +74,7 @@ const getHorarioHoy = (horarioArr: string[]): string => {
 type BlockReasonCode = "TIME_LOCK" | "RATING_LOCK";
 
 export default function Home() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   
   const [bgUrl, setBgUrl] = useState<string>(adminBgMobile);
   const [minH, setMinH] = useState<string>('100svh');
@@ -89,6 +103,8 @@ export default function Home() {
 
   const cafeteriaIds = useMemo(() => user?.cafeteria_ids ?? [], [user]);
   const [cafeteriaActivaId, setCafeteriaActivaId] = useState<string | null>(null);
+
+  const [cafeterias, setCafeterias] = useState<Cafeteria[]>([]);
 
   // --- Efectos de Fondo ---
   useEffect(() => {
@@ -188,6 +204,32 @@ export default function Home() {
     if (data) setConfig(data);
     if (error) console.error('Error fetching config:', error.message);
   };
+
+  const fetchCafeterias = async () => {
+    if (!user || cafeteriaIds.length === 0) {
+      setCafeterias([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('configuracion')
+      .select('id, nombre_local')
+      .in('id', cafeteriaIds)
+      .order('nombre_local');
+
+    if (error) {
+      console.error('Error fetching cafeterias:', error.message);
+      setCafeterias([]);
+      return;
+    }
+
+    setCafeterias(data ?? []);
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    fetchCafeterias();
+  }, [user, cafeteriaIds]);
 
   const fetchMenu = async () => {
     if (!cafeteriaActivaId) return;
@@ -502,6 +544,26 @@ export default function Home() {
                 <span>{config?.abierto ? 'Abierta' : 'Cerrada'}</span>
               </div>
             </div>
+            <Select
+              value={cafeteriaActivaId ?? ""}
+              onValueChange={(value) => setCafeteriaActivaId(value)}
+            >
+              <SelectTrigger className="w-full bg-white text-black border border-gray-300">
+                <SelectValue placeholder="Selecciona cafetería" />
+              </SelectTrigger>
+
+              <SelectContent className="bg-white text-neutral-900 border border-gray-200">
+                {cafeterias.map((c) => (
+                  <SelectItem
+                    key={c.id}
+                    value={c.id}
+                    className="cursor-pointer focus:bg-gray-100 focus:text-neutral-900"
+                  >
+                    {c.nombre_local}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
         </div>
 
         <div className="flex items-center gap-2">
@@ -510,27 +572,45 @@ export default function Home() {
             alt="Logo" 
             className="h-10 w-10 rounded-full border-2 border-unemi-orange bg-white object-contain" 
           />
-          <SugerenciasDialog user={user} />
-          <ChangePasswordDialog user={user} />
-          <Button variant="ghost" size="icon" onClick={logout} aria-label="Cerrar Sesión">
-            <LogOut className="h-5 w-5" />
-          </Button>
         </div>
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <Settings className="h-5 w-5" />
+            </Button>
+          </SheetTrigger>
 
-        {cafeteriaIds.length > 1 && (
-          <select
-            className="mt-2 bg-white text-black rounded px-2 py-1 text-sm"
-            value={cafeteriaActivaId ?? ''}
-            onChange={(e) => setCafeteriaActivaId(e.target.value)}
-          >
-            <option value="" disabled>Selecciona cafetería</option>
-            {cafeteriaIds.map(id => (
-              <option key={id} value={id}>
-                Cafetería {id.slice(0, 6)}
-              </option>
-            ))}
-          </select>
-        )}
+          <SheetContent side="right" className="bg-white text-neutral-900">
+            <SheetHeader>
+              <SheetTitle>Opciones</SheetTitle>
+            </SheetHeader>
+
+            <div className="mt-6 space-y-3">
+              <UpdateProfileDialog
+                user={user}
+                triggerAsRow
+                onUpdated={async () => {
+                  await refreshUser();
+                }}
+              />
+
+              <ChangePasswordDialog user={user} triggerAsRow />
+
+              <SugerenciasDialog
+                user={user}
+                cafeteriaId={cafeteriaActivaId}
+                triggerAsRow
+              />
+
+              <SheetActionRow
+                icon={<LogOut className="h-4 w-4" />}
+                label="Cerrar sesión"
+                variant="destructive"
+                onClick={logout}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
 
       </header>
       
@@ -625,6 +705,7 @@ export default function Home() {
           <TabsContent value="pedidos">
             <PedidosHistorialList 
               user={user} 
+              cafeteriaId={cafeteriaActivaId}
               loading={loadingPedidos} 
               historial={pedidosHistorial}
               onRatingSuccess={fetchPedidos}
@@ -757,7 +838,36 @@ function RankingWidget({ loading, ranking }: { loading: boolean, ranking: number
   );
 }
 
-function ChangePasswordDialog({ user }: { user: SessionUser | null }) {
+function SheetActionRow({
+  icon,
+  label,
+  onClick,
+  variant = "outline",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  variant?: "outline" | "destructive";
+}) {
+  return (
+    <Button
+      variant={variant}
+      className="w-full justify-start gap-2"
+      onClick={onClick}
+    >
+      {icon}
+      {label}
+    </Button>
+  );
+}
+
+function ChangePasswordDialog({
+  user,
+  triggerAsRow = false,
+}: {
+  user: SessionUser | null;
+  triggerAsRow?: boolean;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -767,30 +877,15 @@ function ChangePasswordDialog({ user }: { user: SessionUser | null }) {
     if (!user) return;
 
     if (!newPassword || !confirmPassword) {
-      toast({
-        title: 'Campos vacíos',
-        description: 'Por favor, ingresa y repite la contraseña.',
-        variant: 'destructive'
-      });
+      toast({ title: 'Campos vacíos', variant: 'destructive' });
       return;
     }
-    if (newPassword.length < 6) {
-      toast({
-        title: 'Contraseña muy corta',
-        description: 'Debe tener al menos 6 caracteres.',
-        variant: 'destructive'
-      });
-      return;
-    }
+
     if (newPassword !== confirmPassword) {
-      toast({
-        title: 'Las contraseñas no coinciden',
-        description: 'Por favor, verifica la contraseña.',
-        variant: 'destructive'
-      });
+      toast({ title: 'Las contraseñas no coinciden', variant: 'destructive' });
       return;
     }
-    
+
     setIsSubmitting(true);
 
     const { error } = await supabase.rpc('update_user_password', {
@@ -799,55 +894,170 @@ function ChangePasswordDialog({ user }: { user: SessionUser | null }) {
     });
 
     if (error) {
-      toast({ title: 'Error al actualizar', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
-      toast({ title: '¡Éxito!', description: 'Tu contraseña ha sido actualizada.' });
+      toast({ title: 'Contraseña actualizada' });
+      setIsOpen(false);
       setNewPassword("");
       setConfirmPassword("");
-      setIsOpen(false);
     }
+
     setIsSubmitting(false);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Cambiar Contraseña">
-          <KeyRound className="h-5 w-5" />
-        </Button>
+        {triggerAsRow ? (
+          <Button variant="outline" className="w-full justify-start gap-2">
+            <KeyRound className="h-4 w-4" />
+            Cambiar contraseña
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon">
+            <KeyRound className="h-5 w-5" />
+          </Button>
+        )}
       </DialogTrigger>
 
       <DialogContent className="bg-white text-neutral-900">
         <DialogHeader>
-          <DialogTitle className="font-aventura text-2xl text-neutral-900">
-            Cambiar Contraseña
-          </DialogTitle>
-          <DialogDescription className="text-neutral-600">
-            Ingresa tu nueva contraseña.
+          <DialogTitle>Cambiar Contraseña</DialogTitle>
+        </DialogHeader>
+
+        <Input
+          type="password"
+          placeholder="Nueva contraseña"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+        />
+
+        <Input
+          type="password"
+          placeholder="Repetir contraseña"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+        />
+
+        <DialogFooter>
+          <Button onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting ? "Actualizando..." : "Actualizar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UpdateProfileDialog({
+  user,
+  triggerAsRow = false,
+  onUpdated,
+}: {
+  user: SessionUser | null;
+  triggerAsRow?: boolean;
+  onUpdated?: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [phone, setPhone] = useState(user?.phone ?? "");
+  const [fechaNacimiento, setFechaNacimiento] = useState(
+    user?.fecha_nacimiento ?? ""
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setPhone(user?.phone ?? "");
+    setFechaNacimiento(user?.fecha_nacimiento ?? "");
+  }, [user]);
+
+  const handleSubmit = async () => {
+    if (!user) return;
+
+    if (!phone.trim() || !fechaNacimiento) {
+      toast({
+        title: "Campos incompletos",
+        description: "Teléfono y fecha de nacimiento son obligatorios.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const { error } = await supabase
+      .from("app_users")
+      .update({
+        phone: phone.trim(),
+        fecha_nacimiento: fechaNacimiento,
+      })
+      .eq("id", user.id);
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({ title: "Datos actualizados correctamente" });
+      setIsOpen(false);
+      onUpdated?.();
+    }
+
+    setIsSubmitting(false);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        {triggerAsRow ? (
+          <Button variant="outline" className="w-full justify-start gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Actualizar datos
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon">
+            <RefreshCw className="h-5 w-5" />
+          </Button>
+        )}
+      </DialogTrigger>
+
+      <DialogContent className="bg-white text-neutral-900">
+        <DialogHeader>
+          <DialogTitle>Actualizar datos personales</DialogTitle>
+          <DialogDescription>
+            Mantén tu información actualizada.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4 space-y-4">
-          <Input
-            type="password"
-            placeholder="Nueva Contraseña (mín. 6 caracteres)"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            className="bg-gray-100 text-neutral-900"
-          />
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Teléfono</label>
+            <Input
+              type="tel"
+              placeholder="Ej: 0991234567"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
 
-          <Input
-            type="password"
-            placeholder="Repetir Contraseña"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className="bg-gray-100 text-neutral-900"
-          />
+          <div>
+            <label className="text-sm font-medium">Fecha de nacimiento</label>
+            <Input
+              type="date"
+              value={fechaNacimiento}
+              onChange={(e) => setFechaNacimiento(e.target.value)}
+            />
+          </div>
         </div>
 
         <DialogFooter>
-          <Button variant="secondary" className="w-full" onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? "Actualizando..." : "Actualizar Contraseña"}
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className="w-full"
+          >
+            {isSubmitting ? "Guardando..." : "Guardar cambios"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -987,11 +1197,13 @@ function PedidosActivosWidget({ loading, activos }: { loading: boolean, activos:
 
 function PedidosHistorialList({
   user,
+  cafeteriaId,
   loading,
   historial,
   onRatingSuccess
 }: {
   user: SessionUser | null;
+  cafeteriaId: string | null;
   loading: boolean;
   historial: Pedido[];
   onRatingSuccess: () => void;
@@ -1039,6 +1251,7 @@ function PedidosHistorialList({
                 <RatingDialog 
                   user={user} 
                   pedidoId={pedido.id}
+                  cafeteriaId={cafeteriaId}
                   initialCalificado={pedido.calificado}
                   onRatingSuccess={onRatingSuccess}
                 />
@@ -1051,31 +1264,36 @@ function PedidosHistorialList({
   );
 }
 
-function SugerenciasDialog({ user }: { user: SessionUser | null }) {
+function SugerenciasDialog({
+  user,
+  cafeteriaId,
+  triggerAsRow = false,
+}: {
+  user: SessionUser | null;
+  cafeteriaId: string | null;
+  triggerAsRow?: boolean;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [mensaje, setMensaje] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-    if (!user || !mensaje.trim()) return;
+    if (!user || !mensaje.trim() || !cafeteriaId) return;
 
     setIsSubmitting(true);
 
     const { error } = await supabase
       .from('sugerencias_pwa')
-      .insert({ user_id: user.id, mensaje: mensaje.trim() });
+      .insert({
+        user_id: user.id,
+        cafeteria_id: cafeteriaId,
+        mensaje: mensaje.trim(),
+      });
 
     if (error) {
-      toast({
-        title: 'Error al enviar',
-        description: error.message,
-        variant: 'destructive'
-      });
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
-      toast({
-        title: '¡Gracias!',
-        description: 'Tu sugerencia ha sido enviada.'
-      });
+      toast({ title: 'Gracias por tu sugerencia' });
       setMensaje("");
       setIsOpen(false);
     }
@@ -1086,38 +1304,32 @@ function SugerenciasDialog({ user }: { user: SessionUser | null }) {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Enviar Sugerencia">
-          <MessageSquare className="h-5 w-5" />
-        </Button>
+        {triggerAsRow ? (
+          <Button variant="outline" className="w-full justify-start gap-2">
+            <MessageSquare className="h-4 w-4" />
+            Enviar sugerencia
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon">
+            <MessageSquare className="h-5 w-5" />
+          </Button>
+        )}
       </DialogTrigger>
 
       <DialogContent className="bg-white text-neutral-900">
         <DialogHeader>
-          <DialogTitle className="font-aventura text-2xl text-neutral-900">
-            Sugerencias y Comentarios
-          </DialogTitle>
-          <DialogDescription className="text-neutral-600">
-            Ayúdanos a mejorar. ¿Qué te gustaría ver?
-          </DialogDescription>
+          <DialogTitle>Sugerencias</DialogTitle>
         </DialogHeader>
 
-        <div className="py-4">
-          <Textarea
-            placeholder="Escribe tu comentario aquí..."
-            value={mensaje}
-            onChange={(e) => setMensaje(e.target.value)}
-            className="bg-gray-100 text-neutral-900"
-          />
-        </div>
+        <Textarea
+          placeholder="Escribe tu comentario..."
+          value={mensaje}
+          onChange={(e) => setMensaje(e.target.value)}
+        />
 
         <DialogFooter>
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={handleSubmit}
-            disabled={isSubmitting || !mensaje.trim()}
-          >
-            {isSubmitting ? "Enviando..." : "Enviar Sugerencia"}
+          <Button onClick={handleSubmit} disabled={isSubmitting || !mensaje.trim()}>
+            {isSubmitting ? "Enviando..." : "Enviar"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1128,11 +1340,13 @@ function SugerenciasDialog({ user }: { user: SessionUser | null }) {
 function RatingDialog({
   user,
   pedidoId,
+  cafeteriaId,
   initialCalificado,
   onRatingSuccess
 }: {
   user: SessionUser | null;
   pedidoId: string;
+  cafeteriaId: string | null;
   initialCalificado: boolean;
   onRatingSuccess: () => void;
 }) {
@@ -1154,6 +1368,7 @@ function RatingDialog({
         await supabase.from('calificaciones_pwa').insert({
           user_id: user.id,
           pedido_id: pedidoId,
+          cafeteria_id: cafeteriaId,
           estrellas: rating,
           comentario: comentario.trim()
         });

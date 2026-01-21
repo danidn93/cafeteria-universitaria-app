@@ -283,30 +283,35 @@ export default function Home() {
     if (!user || !cafeteriaActivaId) return;
 
     const channel = supabase
-      .channel(`pedidos-home-${user.id}`)
+      .channel(`pedidos-home-${user.id}-${cafeteriaActivaId}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'pedidos_pwa',
           filter: `user_id=eq.${user.id}`,
         },
-        () => {
-          // 🔥 Cualquier cambio se refleja inmediatamente
-          fetchPedidos();
-        }
+        () => fetchPedidos()
       )
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'UPDATE',
           schema: 'public',
-          table: 'pedido_pwa_items',
+          table: 'pedidos_pwa',
+          filter: `user_id=eq.${user.id}`,
         },
-        () => {
-          fetchPedidos();
-        }
+        () => fetchPedidos()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'pedidos_pwa',
+        },
+        () => fetchPedidos()
       )
       .subscribe();
 

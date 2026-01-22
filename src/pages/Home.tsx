@@ -307,8 +307,8 @@ export default function Home() {
 
     const historial = normalized.filter(p => p.estado === 'entregado');
 
-    setPedidosActivos(activos);
-    setPedidosHistorial(historial);
+    setPedidosActivos([...activos]);
+    setPedidosHistorial([...historial]);
 
     // 🔥 Si ya no hay activos y hay historial → ir a "Mis Pedidos"
     if (activos.length === 0 && historial.length > 0) {
@@ -317,79 +317,80 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (!user || !cafeteriaActivaId) return;
+  if (!user) return;
 
-    const channel = supabase
-      .channel(`pedidos-home-${user.id}-${cafeteriaActivaId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'pedidos_pwa',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => fetchPedidos()
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'pedidos_pwa',
-          filter: `user_id=eq.${user.id},cafeteria_id=eq.${cafeteriaActivaId}`,
-        },
-        async (payload) => {
-          const nuevo = payload.new as any;
+  const channel = supabase
+    .channel(`pedidos-home-${user.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'pedidos_pwa',
+        filter: `user_id=eq.${user.id}`,
+      },
+      () => fetchPedidos()
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'pedidos_pwa',
+        filter: `user_id=eq.${user.id}`,
+      },
+      async (payload) => {
+        const nuevo = payload.new as any;
 
-          const yaNotificado = notifiedRef.current.has(nuevo.id);
-          const esListo = nuevo?.estado === 'listo';
-
-          if (esListo && !yaNotificado) {
-            notifiedRef.current.add(nuevo.id);
-
-            // 🔊 Sonido
-            await playReadySound();
-
-            // 🔔 Toast
-            toast({
-              title: '☕ ¡Tu pedido está listo!',
-              description: 'Puedes pasar a retirarlo.',
-            });
-
-            // 🔔 Notificación push (solo si no está visible)
-            if (
-              document.visibilityState !== 'visible' &&
-              'Notification' in window &&
-              Notification.permission === 'granted'
-            ) {
-              new Notification('Pedido listo ☕', {
-                body: 'Tu pedido ya está listo para retirar.',
-                icon: '/assets/logo-notif.png',
-                badge: '/assets/logo-notif.png',
-              });
-            }
-          }
-
-          // 🔄 Siempre refrescar pedidos
-          fetchPedidos();
+        // 🔁 resetear notificación si deja de estar listo
+        if (nuevo.estado !== 'listo') {
+          notifiedRef.current.delete(nuevo.id);
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'pedidos_pwa',
-        },
-        () => fetchPedidos()
-      )
-      .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, cafeteriaActivaId]);
+        const esListo = nuevo.estado === 'listo';
+        const yaNotificado = notifiedRef.current.has(nuevo.id);
+
+        if (esListo && !yaNotificado) {
+          notifiedRef.current.add(nuevo.id);
+
+          await playReadySound();
+
+          toast({
+            title: '☕ ¡Tu pedido está listo!',
+            description: 'Puedes pasar a retirarlo.',
+          });
+
+          if (
+            document.visibilityState !== 'visible' &&
+            Notification.permission === 'granted'
+          ) {
+            new Notification('Pedido listo ☕', {
+              body: 'Tu pedido ya está listo para retirar.',
+              icon: '/assets/logo-notif.png',
+            });
+          }
+        }
+
+        fetchPedidos();
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'pedidos_pwa',
+        filter: `user_id=eq.${user.id}`,
+      },
+      () => fetchPedidos()
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [user?.id]);
+
 
   useEffect(() => {
     if (!cafeteriaActivaId) return;

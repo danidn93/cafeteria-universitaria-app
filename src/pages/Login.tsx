@@ -120,8 +120,8 @@ export default function Login() {
       const { error } = await supabase
         .from('app_users')
         .update({
-          acepta_terminos_cafeteria: true,
-          acepta_terminos_fecha: new Date().toISOString(),
+          accepted_terms: true,
+          accepted_terms_at: new Date().toISOString(),
         })
         .eq('id', loggedInUser.id);
 

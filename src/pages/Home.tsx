@@ -1933,7 +1933,7 @@ function BirthdayModal({
           </motion.div>
 
           <DialogTitle className="font-aventura text-3xl text-neutral-900">
-            ¡Feliz {age ? `${age} ` : ''}Cumpleaños, {name}!
+            ¡Feliz Cumpleaños {age ? `${age} ` : ''}, {name}!
           </DialogTitle>
 
           <DialogDescription className="text-neutral-600">

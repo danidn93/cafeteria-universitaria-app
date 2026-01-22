@@ -279,7 +279,7 @@ export default function Home() {
   const [loadingRanking, setLoadingRanking] = useState(true);
 
   const [blockReason, setBlockReason] = useState<BlockReasonCode | null>(null);
-  const [blockExpiresAt, setBlockExpiresAt] = useState<Date | null>(null);
+  
   const [countdownDisplay, setCountdownDisplay] = useState<string | null>(null);
 
   const cafeteriaIds = useMemo(() => user?.cafeteria_ids ?? [], [user]);
@@ -291,6 +291,14 @@ export default function Home() {
   const pedidosEstadoRef = useRef<Record<string, string>>({});
   const notifiedRef = useRef<Set<string>>(new Set());
   const realtimeChannelRef = useRef<any>(null);
+
+  const blockRef = useRef<{
+    reason: BlockReasonCode | null;
+    expiresAt: Date | null;
+  }>({
+    reason: null,
+    expiresAt: null,
+  });
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -723,76 +731,81 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [user?.id, cafeteriaActivaId, fetchPedidos]);
 
-  useEffect(() => {
-    if (!user?.id || !cafeteriaActivaId) return;
-
-    const interval = setInterval(() => {
-      fetchPedidos(); // SIN loading visual
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [user?.id, cafeteriaActivaId, fetchPedidos]);
-
-  useEffect(() => {
-    if (loadingPedidos) return;
+  const evaluateOrderBlock = useCallback(() => {
+    // ⛔️ NO recalcular si ya está bloqueado
+    if (blockRef.current.reason) return;
 
     const lastActive = pedidosActivos[0];
     const lastHistorical = pedidosHistorial[0];
-    let mostRecentOrder: Pedido | null = null;
 
-    if (lastActive && lastHistorical) {
-      mostRecentOrder =
-        new Date(lastActive.created_at) > new Date(lastHistorical.created_at)
-          ? lastActive
-          : lastHistorical;
-    } else {
-      mostRecentOrder = lastActive || lastHistorical || null;
-    }
+    let mostRecent: Pedido | null = lastActive || lastHistorical || null;
 
-    if (mostRecentOrder) {
-      const lastOrderTime = new Date(mostRecentOrder.created_at);
-      const expirationTime = new Date(lastOrderTime.getTime() + 60 * 60 * 1000);
-      if (expirationTime.getTime() > Date.now()) {
-        setBlockReason('TIME_LOCK');
-        setBlockExpiresAt(expirationTime);
-        return;
-      }
-    }
+    if (!mostRecent) return;
 
-    const lastDeliveredOrder = pedidosHistorial[0];
-    if (lastDeliveredOrder && !lastDeliveredOrder.calificado) {
-      setBlockReason('RATING_LOCK');
-      setBlockExpiresAt(null);
+    const createdAt = new Date(mostRecent.created_at);
+
+    // 🕒 TIME LOCK (1 hora)
+    const expires = new Date(createdAt.getTime() + 60 * 60 * 1000);
+    if (expires.getTime() > Date.now()) {
+      blockRef.current = {
+        reason: 'TIME_LOCK',
+        expiresAt: expires,
+      };
+      setBlockReason('TIME_LOCK');
+      
       return;
     }
 
-    setBlockReason(null);
-    setBlockExpiresAt(null);
-  }, [pedidosActivos, pedidosHistorial, loadingPedidos]);
+    // ⭐ RATING LOCK
+    if (mostRecent.estado === 'entregado' && !mostRecent.calificado) {
+      blockRef.current = {
+        reason: 'RATING_LOCK',
+        expiresAt: null,
+      };
+      setBlockReason('RATING_LOCK');
+      
+    }
+  }, [pedidosActivos, pedidosHistorial]);
 
   useEffect(() => {
+    if (!loadingPedidos) {
+      evaluateOrderBlock();
+    }
+  }, [loadingPedidos, evaluateOrderBlock]);
+
+  useEffect(() => {
+    if (!blockRef.current.reason) return;
+
     const updateCountdown = () => {
-      if (blockReason === 'TIME_LOCK' && blockExpiresAt) {
-        const diff = blockExpiresAt.getTime() - Date.now();
+      if (
+        blockRef.current.reason === 'TIME_LOCK' &&
+        blockRef.current.expiresAt
+      ) {
+        const diff = blockRef.current.expiresAt.getTime() - Date.now();
+
         if (diff <= 0) {
-          setBlockExpiresAt(null);
+          blockRef.current = { reason: null, expiresAt: null };
           setBlockReason(null);
+          
           setCountdownDisplay(null);
-        } else {
-          const minutesLeft = Math.ceil(diff / (1000 * 60));
-          setCountdownDisplay(`Próximo pedido en ${minutesLeft} min.`);
+          return;
         }
-      } else if (blockReason === 'RATING_LOCK') {
-        setCountdownDisplay('Debes calificar tu último pedido para pedir de nuevo.');
-      } else {
-        setCountdownDisplay(null);
+
+        const min = Math.ceil(diff / 60000);
+        setCountdownDisplay(`Próximo pedido en ${min} min.`);
+      }
+
+      if (blockRef.current.reason === 'RATING_LOCK') {
+        setCountdownDisplay(
+          'Debes calificar tu último pedido para pedir de nuevo.'
+        );
       }
     };
 
     updateCountdown();
-    const intervalId = setInterval(updateCountdown, 10000);
-    return () => clearInterval(intervalId);
-  }, [blockReason, blockExpiresAt]);
+    const id = setInterval(updateCountdown, 10000);
+    return () => clearInterval(id);
+  }, [blockReason]);
 
   const isOrderBlocked = !!blockReason;
   const finalBlockReason =

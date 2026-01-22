@@ -90,6 +90,12 @@ const unlockAudio = () => {
   audio.play().catch(() => {});
 };
 
+const readyAfterMountRef = useRef(false);
+
+useEffect(() => {
+  readyAfterMountRef.current = true;
+}, []);
+
 export default function Home() {
   const { user, logout, refreshUser } = useAuth();
   
@@ -329,7 +335,10 @@ export default function Home() {
         table: 'pedidos_pwa',
         filter: `user_id=eq.${user.id}`,
       },
-      () => fetchPedidos()
+      (payload) => {
+        if (payload.new.cafeteria_id !== cafeteriaActivaId) return;
+        fetchPedidos();
+      }
     )
     .on(
       'postgres_changes',
@@ -343,13 +352,14 @@ export default function Home() {
         const nuevo = payload.new as any;
 
         // 🔁 resetear notificación si deja de estar listo
-        if (nuevo.estado !== 'listo') {
-          notifiedRef.current.delete(nuevo.id);
-        }
+        if (!readyAfterMountRef.current) return;
+
+        if (nuevo.cafeteria_id !== cafeteriaActivaId) return;
 
         const esListo = nuevo.estado === 'listo';
         const yaNotificado = notifiedRef.current.has(nuevo.id);
 
+        // 🔔 SOLO cuando entra a LISTO mientras la app ya está montada
         if (esListo && !yaNotificado) {
           notifiedRef.current.add(nuevo.id);
 
@@ -418,20 +428,6 @@ export default function Home() {
     
     setLoadingRanking(false);
   };
-
-  // --- Efectos de carga inicial ---
-  useEffect(() => {
-    if (!user) {
-      setLoadingItems(false);
-      setLoadingPedidos(false);
-      return;
-    }
-
-    fetchConfig();
-    fetchMenu();
-    fetchUserRanking();
-
-  }, [user]);
 
   useEffect(() => {
     if (!user || !cafeteriaActivaId) return;

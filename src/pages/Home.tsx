@@ -1,5 +1,6 @@
 // client/src/pages/Home.tsx
 import { useState, useEffect, useMemo } from 'react';
+import { useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import type { SessionUser } from '@/context/AuthContext';
@@ -123,6 +124,8 @@ export default function Home() {
   const [cafeterias, setCafeterias] = useState<Cafeteria[]>([]);
 
   const [activeTab, setActiveTab] = useState<'menu' | 'pedidos'>('menu');
+
+  const notifiedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -334,28 +337,32 @@ export default function Home() {
           event: 'UPDATE',
           schema: 'public',
           table: 'pedidos_pwa',
-          filter: `user_id=eq.${user.id}`,
+          filter: `user_id=eq.${user.id},cafeteria_id=eq.${cafeteriaActivaId}`,
         },
         async (payload) => {
           const nuevo = payload.new as any;
-          const anterior = payload.old as any;
 
-          // 🔒 Detectar transición real a LISTO
-          const pasoAListo =
-            anterior?.estado !== 'listo' && nuevo?.estado === 'listo';
+          const yaNotificado = notifiedRef.current.has(nuevo.id);
+          const esListo = nuevo?.estado === 'listo';
 
-          if (pasoAListo) {
+          if (esListo && !yaNotificado) {
+            notifiedRef.current.add(nuevo.id);
+
             // 🔊 Sonido
             await playReadySound();
 
-            // 🔔 Toast visual
+            // 🔔 Toast
             toast({
               title: '☕ ¡Tu pedido está listo!',
               description: 'Puedes pasar a retirarlo.',
             });
 
-            // 🔔 Notificación push
-            if ('Notification' in window && Notification.permission === 'granted') {
+            // 🔔 Notificación push (solo si no está visible)
+            if (
+              document.visibilityState !== 'visible' &&
+              'Notification' in window &&
+              Notification.permission === 'granted'
+            ) {
               new Notification('Pedido listo ☕', {
                 body: 'Tu pedido ya está listo para retirar.',
                 icon: '/assets/logo-notif.png',

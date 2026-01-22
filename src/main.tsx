@@ -1,20 +1,33 @@
-// client/src/main.tsx
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
-import { AuthProvider } from './context/AuthContext'; // 👈 Importa el Provider
-import './index.css'; // 👈 ¡IMPORTANTE! Importa tu CSS global (para Tailwind)
+import { AuthProvider } from './context/AuthContext';
+import './index.css';
+
+/* ─────────────────────────────────────────────
+   REGISTRO DEL SERVICE WORKER (OBLIGATORIO)
+   ───────────────────────────────────────────── */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((reg) => {
+        console.log('[SW] registrado correctamente', reg.scope);
+      })
+      .catch((err) => {
+        console.error('[SW] error al registrar', err);
+      });
+  });
+}
+/* ───────────────────────────────────────────── */
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AuthProvider> 
-        {/* AuthProvider envuelve a 'App' para que todas las páginas
-            puedan saber si el usuario inició sesión */}
+      <AuthProvider>
         <App />
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 );
-//

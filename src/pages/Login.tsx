@@ -319,32 +319,31 @@ export default function Login() {
                       )}
                         {formState === 'Login' && correoAceptoTerminos === false && (
                           <div className="px-4 pb-2">
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => setTermsChecked(!termsChecked)}
-                                className={`relative w-11 h-6 rounded-full transition-colors
-                                  ${termsChecked ? 'bg-[hsl(var(--unemi-orange))]' : 'bg-white/40'}
-                                `}
-                                aria-label="Aceptar términos"
-                              >
-                                <span
-                                  className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform
-                                    ${termsChecked ? 'translate-x-5' : ''}
-                                  `}
-                                />
-                              </button>
+                            <div className="flex items-start gap-3">
+                              <input
+                                id="accept-terms"
+                                type="checkbox"
+                                checked={termsChecked}
+                                onChange={(e) => setTermsChecked(e.target.checked)}
+                                className="mt-1 h-4 w-4 accent-[hsl(var(--unemi-orange))] cursor-pointer"
+                              />
 
-                              <span className="text-sm text-white/90">
+                              <label
+                                htmlFor="accept-terms"
+                                className="text-sm text-white/90 cursor-pointer"
+                              >
                                 He leído y acepto los{' '}
                                 <span
-                                  className="underline cursor-pointer font-semibold"
-                                  onClick={() => setShowTermsModal(true)}
+                                  className="underline font-semibold cursor-pointer"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    setShowTermsModal(true);
+                                  }}
                                 >
                                   Términos y Condiciones
                                 </span>{' '}
                                 del sistema de la Cafetería UNEMI
-                              </span>
+                              </label>
                             </div>
                           </div>
                         )}

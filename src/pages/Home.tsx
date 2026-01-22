@@ -71,6 +71,27 @@ const getHorarioHoy = (horarioArr: string[]): string => {
   return horarioArr[todayIndex] || "Horario no disponible";
 };
 
+const isWithinHorario = (horarioArr: string[]): boolean => {
+  if (!horarioArr || horarioArr.length === 0) return false;
+
+  const now = new Date();
+  const dayIndex = (now.getDay() + 6) % 7; // lunes = 0
+  const today = horarioArr[dayIndex];
+
+  if (!today || !today.includes('-')) return false;
+
+  const [start, end] = today.split('-');
+
+  const toMinutes = (t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
+
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  return nowMin >= toMinutes(start) && nowMin <= toMinutes(end);
+};
+
 // ✨ Tipo para el motivo del bloqueo
 type BlockReasonCode = "TIME_LOCK" | "RATING_LOCK";
 
@@ -132,6 +153,17 @@ export default function Home() {
   useEffect(() => {
     readyAfterMountRef.current = true;
   }, []);
+
+  useEffect(() => {
+    // Bloquear notificaciones durante el arranque
+    readyAfterMountRef.current = false;
+
+    const t = setTimeout(() => {
+      readyAfterMountRef.current = true;
+    }, 500); // medio segundo después de montar
+
+    return () => clearTimeout(t);
+  }, [cafeteriaActivaId]);
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -250,6 +282,12 @@ export default function Home() {
     if (error) console.error('Error fetching config:', error.message);
   };
 
+  const cafeteriaOperativa = useMemo(() => {
+    if (!config) return false;
+    if (!config.abierto) return false;
+    return isWithinHorario(config.horario_arr);
+  }, [config]);
+
   const fetchCafeterias = async () => {
     if (!user || cafeteriaIds.length === 0) {
       setCafeterias([]);
@@ -325,11 +363,11 @@ export default function Home() {
   useEffect(() => {
     if (!user || !cafeteriaActivaId) return;
 
-    // 🔄 limpiar notificaciones al cambiar cafetería
+    // 🧹 limpiar estado anterior
     notifiedRef.current.clear();
 
     const channel = supabase
-      .channel(`pedidos-home-${user.id}-${cafeteriaActivaId}`)
+      .channel(`pedidos-pwa-${user.id}-${cafeteriaActivaId}`)
       .on(
         'postgres_changes',
         {
@@ -339,12 +377,37 @@ export default function Home() {
           filter: `user_id=eq.${user.id}`,
         },
         async (payload) => {
+
+          // =====================
+          // 🗑️ DELETE
+          // =====================
+          if (payload.eventType === 'DELETE') {
+            const oldRow = payload.old as any;
+            if (!oldRow) return;
+
+            // quitar de notificados
+            notifiedRef.current.delete(oldRow.id);
+
+            // refrescar UI
+            fetchPedidos();
+            return;
+          }
+
+          // =====================
+          // 🔁 INSERT / UPDATE
+          // =====================
           const nuevo = payload.new as any;
           if (!nuevo) return;
 
+          // ignorar otras cafeterías
           if (nuevo.cafeteria_id !== cafeteriaActivaId) return;
 
-          // ⛔ NO notificar en montaje inicial
+          // si salió de LISTO, limpiar notificación
+          if (nuevo.estado !== 'listo') {
+            notifiedRef.current.delete(nuevo.id);
+          }
+
+          // evitar sonido en arranque
           if (!readyAfterMountRef.current) {
             fetchPedidos();
             return;
@@ -353,6 +416,7 @@ export default function Home() {
           const esListo = nuevo.estado === 'listo';
           const yaNotificado = notifiedRef.current.has(nuevo.id);
 
+          // 🔔 SOLO transición real a LISTO
           if (esListo && !yaNotificado) {
             notifiedRef.current.add(nuevo.id);
 
@@ -374,6 +438,7 @@ export default function Home() {
             }
           }
 
+          // 🔄 SIEMPRE refrescar
           fetchPedidos();
         }
       )
@@ -523,10 +588,12 @@ export default function Home() {
       return;
     }
 
-    if (!config?.abierto) {
+    if (!cafeteriaOperativa) {
       toast({
-        title: 'Cafetería cerrada',
-        description: 'La cafetería no está atendiendo en este momento.',
+        title: 'Cafetería no disponible',
+        description: !config?.abierto
+          ? 'La cafetería se encuentra cerrada.'
+          : 'Estamos fuera del horario de atención.',
         variant: 'destructive',
       });
       return;
@@ -571,10 +638,12 @@ export default function Home() {
 
   const handleSubmitOrder = async () => {
 
-    if (!config?.abierto) {
+    if (!cafeteriaOperativa) {
       toast({
-        title: 'Cafetería cerrada',
-        description: 'No se pueden realizar pedidos porque la cafetería está cerrada.',
+        title: 'Pedido no disponible',
+        description: !config?.abierto
+          ? 'La cafetería se encuentra cerrada.'
+          : 'Estamos fuera del horario de atención.',
         variant: 'destructive',
       });
       return;
@@ -666,8 +735,18 @@ export default function Home() {
                 <span>{config ? getHorarioHoy(config.horario_arr) : "..."}</span>
               </div>
               <div className='flex items-center gap-1.5'>
-                <span className={`h-2 w-2 rounded-full ${config?.abierto ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                <span>{config?.abierto ? 'Abierta' : 'Cerrada'}</span>
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    cafeteriaOperativa ? 'bg-green-500' : 'bg-red-500'
+                  }`}
+                ></span>
+                <span>
+                  {cafeteriaOperativa
+                    ? 'Abierta'
+                    : !config?.abierto
+                    ? 'Cerrada'
+                    : 'Fuera de horario'}
+                </span>
               </div>
             </div>
             {/* Mostrar selector solo si el usuario tiene más de una cafetería */}
@@ -900,14 +979,12 @@ export default function Home() {
                 isSubmitting ||
                 order.length === 0 ||
                 isOrderBlocked ||
-                !config?.abierto
+                !cafeteriaOperativa
               }
               onClick={handleSubmitOrder}
             >
-              {isSubmitting
-                ? 'Confirmando...'
-                : !config?.abierto
-                ? 'Cafetería cerrada'
+              {!cafeteriaOperativa
+                ? 'Cafetería no disponible'
                 : isOrderBlocked
                 ? 'Pedido Bloqueado'
                 : 'Confirmar Pedido'}

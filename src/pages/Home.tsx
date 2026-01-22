@@ -83,6 +83,12 @@ const playReadySound = async () => {
   }
 };
 
+const unlockAudio = () => {
+  const audio = new Audio('/sounds/pedido-listo.mp3');
+  audio.volume = 0;
+  audio.play().catch(() => {});
+};
+
 export default function Home() {
   const { user, logout, refreshUser } = useAuth();
   
@@ -122,6 +128,18 @@ export default function Home() {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
+  }, []);
+
+  useEffect(() => {
+    const handler = () => unlockAudio();
+
+    window.addEventListener('click', handler, { once: true });
+    window.addEventListener('touchstart', handler, { once: true });
+
+    return () => {
+      window.removeEventListener('click', handler);
+      window.removeEventListener('touchstart', handler);
+    };
   }, []);
 
   // --- Efectos de Fondo ---

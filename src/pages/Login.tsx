@@ -145,7 +145,7 @@ export default function Login() {
       loggedInUser.direccion_slug === 'DAC' ||
       loggedInUser.direccion_slug === 'DTH'
     ) {
-      navigate('/admin', { replace: true });
+      navigate('/', { replace: true });
     } else {
       navigate('/', { replace: true });
     }

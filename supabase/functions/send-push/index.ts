@@ -1,21 +1,27 @@
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import webpush from "npm:web-push@3.6.7";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")! // 👈 NECESARIO
-);
-
-webpush.setVapidDetails(
-  "mailto:admin@unemi.edu.ec",
-  Deno.env.get("VAPID_PUBLIC_KEY")!,
-  Deno.env.get("VAPID_PRIVATE_KEY")!
-);
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 
 serve(async (req) => {
+  // 🔴 PRE-FLIGHT CORS
+  if (req.method === "OPTIONS") {
+    return new Response("ok", {
+      status: 200,
+      headers: corsHeaders,
+    });
+  }
+
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return new Response(
+      JSON.stringify({ error: "Method not allowed" }),
+      {
+        status: 405,
+        headers: corsHeaders,
+      }
+    );
   }
 
   try {
@@ -24,11 +30,13 @@ serve(async (req) => {
     if (!user_id) {
       return new Response(
         JSON.stringify({ error: "user_id requerido" }),
-        { status: 400 }
+        {
+          status: 400,
+          headers: corsHeaders,
+        }
       );
     }
 
-    // 🔹 Obtener subscripciones del usuario
     const { data: subs, error } = await supabase
       .from("push_subscriptions")
       .select("*")
@@ -39,7 +47,7 @@ serve(async (req) => {
     if (!subs || subs.length === 0) {
       return new Response(
         JSON.stringify({ ok: true, message: "Sin subscripciones" }),
-        { status: 200 }
+        { status: 200, headers: corsHeaders }
       );
     }
 
@@ -49,7 +57,6 @@ serve(async (req) => {
       icon: "/icon-192.png",
     });
 
-    // 🔔 Enviar push a cada dispositivo
     await Promise.all(
       subs.map((sub) =>
         webpush.sendNotification(
@@ -61,19 +68,22 @@ serve(async (req) => {
             },
           },
           payload
-        ).catch((err) => {
-          console.error("Push error:", err);
-        })
+        ).catch(console.error)
       )
     );
 
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
-
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: corsHeaders,
+    });
   } catch (err) {
     console.error(err);
     return new Response(
       JSON.stringify({ error: "Error enviando push" }),
-      { status: 500 }
+      {
+        status: 500,
+        headers: corsHeaders,
+      }
     );
   }
 });

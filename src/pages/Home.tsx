@@ -732,15 +732,18 @@ export default function Home() {
   }, [user?.id, cafeteriaActivaId, fetchPedidos]);
 
   const evaluateOrderBlock = useCallback(() => {
-    // ⛔️ NO recalcular si ya está bloqueado
-    if (blockRef.current.reason) return;
-
     const lastActive = pedidosActivos[0];
     const lastHistorical = pedidosHistorial[0];
 
-    let mostRecent: Pedido | null = lastActive || lastHistorical || null;
+    const mostRecent: Pedido | null = lastActive || lastHistorical || null;
 
-    if (!mostRecent) return;
+    // ✅ NO hay pedidos → desbloquear
+    if (!mostRecent) {
+      blockRef.current = { reason: null, expiresAt: null };
+      setBlockReason(null);
+      setCountdownDisplay(null);
+      return;
+    }
 
     const createdAt = new Date(mostRecent.created_at);
 
@@ -752,7 +755,6 @@ export default function Home() {
         expiresAt: expires,
       };
       setBlockReason('TIME_LOCK');
-      
       return;
     }
 
@@ -763,8 +765,13 @@ export default function Home() {
         expiresAt: null,
       };
       setBlockReason('RATING_LOCK');
-      
+      return;
     }
+
+    // ✅ Nada aplica → desbloquear
+    blockRef.current = { reason: null, expiresAt: null };
+    setBlockReason(null);
+    setCountdownDisplay(null);
   }, [pedidosActivos, pedidosHistorial]);
 
   useEffect(() => {

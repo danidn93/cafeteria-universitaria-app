@@ -162,8 +162,20 @@ const unlockAudio = () => {
   pedidoListoAudio.volume = 0.8;
   pedidoListoAudio.preload = 'auto';
 
-  // Truco CRÍTICO: reproducir y pausar dentro del gesto
-  pedidoListoAudio.play()
+  // 🔕 EVITA QUE APAREZCA EN EL REPRODUCTOR DEL SISTEMA
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = null;
+    navigator.mediaSession.setActionHandler('play', null);
+    navigator.mediaSession.setActionHandler('pause', null);
+    navigator.mediaSession.setActionHandler('stop', null);
+    navigator.mediaSession.setActionHandler('seekbackward', null);
+    navigator.mediaSession.setActionHandler('seekforward', null);
+    navigator.mediaSession.setActionHandler('previoustrack', null);
+    navigator.mediaSession.setActionHandler('nexttrack', null);
+  }
+
+  pedidoListoAudio
+    .play()
     .then(() => {
       pedidoListoAudio!.pause();
       pedidoListoAudio!.currentTime = 0;
@@ -184,74 +196,57 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-async function requestPushPermission(userId: string) {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    toast({
-      title: 'No compatible',
-      description: 'Tu navegador no soporta notificaciones push',
-      variant: 'destructive',
-    });
-    return;
-  }
+async function ensurePushSubscription(userId: string) {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
-  if (Notification.permission === 'denied') {
-    toast({
-      title: 'Permisos bloqueados',
-      description: 'Debes habilitar notificaciones desde la configuración del navegador.',
-      variant: 'destructive',
-    });
-    return;
-  }
+    if (Notification.permission === 'denied') return;
 
-  const permission = await Notification.requestPermission();
+    let permission: NotificationPermission = Notification.permission;
 
-  if (permission !== 'granted') {
-    toast({
-      title: 'Permiso no concedido',
-      description: 'No podremos avisarte cuando tu pedido esté listo.',
-      variant: 'destructive',
-    });
-    return;
-  }
+    // ⚠️ SOLO tras gesto del usuario
+    if (permission === 'default') {
+      permission = await Notification.requestPermission();
+    }
 
-  const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-  if (!vapidPublicKey) {
-    console.error('VAPID key no definida');
-    return;
-  }
+    if (permission !== 'granted') return;
 
-  const reg = await navigator.serviceWorker.ready;
+    const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+    if (!vapidPublicKey) {
+      console.warn('[PUSH] VAPID public key no definida');
+      return;
+    }
 
-  const subscription = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-  });
+    const reg = await navigator.serviceWorker.ready;
 
-  const json = subscription.toJSON();
+    // 🔁 Verificar si ya existe suscripción
+    let subscription = await reg.pushManager.getSubscription();
 
-  const { error } = await supabase
-    .from('push_subscriptions')
-    .upsert({
-      user_id: userId,
-      endpoint: subscription.endpoint,
-      p256dh: json.keys?.p256dh,
-      auth: json.keys?.auth,
-      user_agent: navigator.userAgent,
-      updated_at: new Date().toISOString(),
-    });
+    if (!subscription) {
+      subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      });
+    }
 
-  if (error) {
-    console.error(error);
-    toast({
-      title: 'Error',
-      description: 'No se pudo registrar notificaciones',
-      variant: 'destructive',
-    });
-  } else {
-    toast({
-      title: '🔔 Notificaciones activadas',
-      description: 'Te avisaremos cuando tu pedido esté listo',
-    });
+    const json = subscription.toJSON();
+
+    await supabase.from('push_subscriptions').upsert(
+      {
+        user_id: userId,
+        endpoint: subscription.endpoint,
+        p256dh: json.keys?.p256dh,
+        auth: json.keys?.auth,
+        user_agent: navigator.userAgent,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'endpoint' }
+    );
+
+    console.log('[PUSH] suscripción asegurada');
+  } catch (err) {
+    // ❗ NO romper pedido por push
+    console.warn('[PUSH] error silencioso', err);
   }
 }
 
@@ -299,12 +294,6 @@ export default function Home() {
     reason: null,
     expiresAt: null,
   });
-
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
 
   useEffect(() => {
     const handler = () => unlockAudio();
@@ -895,6 +884,8 @@ export default function Home() {
     }
 
     if (!user || order.length === 0) return;
+
+    await ensurePushSubscription(user.id);
     setIsSubmitting(true);
 
     try {
@@ -1045,14 +1036,6 @@ export default function Home() {
                 cafeteriaId={cafeteriaActivaId}
                 triggerAsRow
               />
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                onClick={() => user?.id && requestPushPermission(user.id)}
-              >
-                🔔 Activar notificaciones
-              </Button>
-
               <SheetActionRow
                 icon={<LogOut className="h-4 w-4" />}
                 label="Cerrar sesión"

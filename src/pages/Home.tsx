@@ -90,12 +90,6 @@ const unlockAudio = () => {
   audio.play().catch(() => {});
 };
 
-const readyAfterMountRef = useRef(false);
-
-useEffect(() => {
-  readyAfterMountRef.current = true;
-}, []);
-
 export default function Home() {
   const { user, logout, refreshUser } = useAuth();
   
@@ -132,6 +126,12 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'menu' | 'pedidos'>('menu');
 
   const notifiedRef = useRef<Set<string>>(new Set());
+
+  const readyAfterMountRef = useRef(false);
+
+  useEffect(() => {
+    readyAfterMountRef.current = true;
+  }, []);
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {

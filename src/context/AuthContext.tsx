@@ -25,6 +25,9 @@ export type SessionUser = {
   cafeteria_ids: string[];
   fecha_nacimiento: string | null;
   phone: string | null;
+
+  acepta_terminos_cafeteria: boolean;
+  acepta_terminos_fecha: string | null;
 };
 
 interface AuthContextType {
@@ -147,6 +150,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         fecha_nacimiento,
         cafeteria_ids,
         direccion_id,
+        acepta_terminos_cafeteria,
+        acepta_terminos_fecha,
         direcciones ( slug )
       `)
       .eq('id', user.id)

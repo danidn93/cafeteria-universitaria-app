@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/components/hooks/use-toast';
+import { supabase } from '@/services/supabaseClient';
 
 // Tus Imágenes
 import adminBgDesktop from '/assets/admin-bg-ordinario.png';
@@ -20,7 +21,7 @@ import logo from '/assets/logo-admin-ordinario.png';
 type FormState = 'Login' | 'CheckEmail' | 'Register';
 
 export default function Login() {
-  const { user, login, checkEmail, register } = useAuth();
+  const { user, login, checkEmail, register, refreshUser, loading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -33,6 +34,31 @@ export default function Login() {
   
   const [formState, setFormState] = useState<FormState>('Login');
   const [nombre, setNombre] = useState('');
+
+  const [showTermsModal, setShowTermsModal] = useState(false);
+
+  const [termsChecked, setTermsChecked] = useState(false);
+  const [correoAceptoTerminos, setCorreoAceptoTerminos] = useState<boolean | null>(null);
+
+  const validarTerminosPorCorreoLogin = async (email: string) => {
+    if (!email) {
+      setCorreoAceptoTerminos(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('accepted_terms')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (error || !data) {
+      setCorreoAceptoTerminos(null);
+      return;
+    }
+
+    setCorreoAceptoTerminos(data.accepted_terms);
+  };
 
   // Tu useEffect para el fondo (¡Perfecto!)
   useEffect(() => {
@@ -53,32 +79,77 @@ export default function Login() {
     return () => window.visualViewport?.removeEventListener('resize', setVh);
   }, []);
 
-  if (user) return <Navigate to="/" replace />;
+    if (loading) {
+      return null; // o un spinner si quieres
+    }
 
-  // --- LÓGICA DE HANDLERS ACTUALIZADA ---
-  
+    if (user) {
+      return <Navigate to="/" replace />;
+    }
+
   // ¡¡¡ ESTA ES LA CORRECCIÓN !!!
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    // 1. La función 'login' ahora devuelve el usuario o null
+
     const loggedInUser: SessionUser | null = await login(email, password);
-    
-    if (loggedInUser) {
-      toast({ title: 'Inicio de sesión exitoso' });
-      
-      // 2. ¡DECISIÓN INTELIGENTE!
-      // Verificamos el slug del usuario que nos devolvió el login
-      if (loggedInUser.direccion_slug === 'DAC' || loggedInUser.direccion_slug === 'DTH') {
-        navigate('/admin', { replace: true }); // ¡A la página de Admin!
-      } else {
-        navigate('/', { replace: true }); // A la página de usuario normal
-      }
-      
-    } else {
-      toast({ title: 'Error de autenticación', description: 'Correo o contraseña incorrectos', variant: 'destructive' });
+
+    if (!loggedInUser) {
+      toast({
+        title: 'Error de autenticación',
+        description: 'Correo o contraseña incorrectos',
+        variant: 'destructive',
+      });
+      setIsLoading(false);
+      return;
     }
+
+    // 🚨 SI NO HA ACEPTADO TÉRMINOS ANTES
+    if (!loggedInUser.acepta_terminos_cafeteria) {
+      if (!termsChecked) {
+        toast({
+          title: 'Aceptación requerida',
+          description: 'Debes aceptar los términos y condiciones para continuar.',
+          variant: 'destructive',
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // ✅ SE GUARDA SOLO AL INICIAR SESIÓN
+      const { error } = await supabase
+        .from('app_users')
+        .update({
+          acepta_terminos_cafeteria: true,
+          acepta_terminos_fecha: new Date().toISOString(),
+        })
+        .eq('id', loggedInUser.id);
+
+      if (error) {
+        toast({
+          title: 'Error',
+          description: 'No se pudo registrar la aceptación de términos.',
+          variant: 'destructive',
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // 🔄 sincroniza cookie + contexto
+      await refreshUser();
+    }
+
+    toast({ title: 'Inicio de sesión exitoso' });
+
+    if (
+      loggedInUser.direccion_slug === 'DAC' ||
+      loggedInUser.direccion_slug === 'DTH'
+    ) {
+      navigate('/admin', { replace: true });
+    } else {
+      navigate('/', { replace: true });
+    }
+
     setIsLoading(false);
   };
 
@@ -202,6 +273,11 @@ export default function Login() {
                           type="email"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
+                          onBlur={() => {
+                            if (formState === 'Login') {
+                              validarTerminosPorCorreoLogin(email.toLowerCase());
+                            }
+                          }}
                           placeholder="tu.correo@empresa.com"
                           required
                           className="bg-white/90 text-[hsl(240_1.4%_13.5%)] placeholder:text-[hsl(240_1.4%_13.5%/_0.65)]"
@@ -211,7 +287,6 @@ export default function Login() {
                           disabled={formState === 'Register'}
                         />
                       </div>
-
                       {formState !== 'CheckEmail' && (
                         <div className="space-y-2">
                           <Label htmlFor="password" className="text-white/90">Contraseña</Label>
@@ -239,10 +314,40 @@ export default function Login() {
                                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                               </motion.div>
                             </Button>
-                          </div>
-                        </div>
+                          </div>                          
+                        </div>                        
                       )}
-                      
+                        {formState === 'Login' && correoAceptoTerminos === false && (
+                          <div className="px-4 pb-2">
+                            <div className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setTermsChecked(!termsChecked)}
+                                className={`relative w-11 h-6 rounded-full transition-colors
+                                  ${termsChecked ? 'bg-[hsl(var(--unemi-orange))]' : 'bg-white/40'}
+                                `}
+                                aria-label="Aceptar términos"
+                              >
+                                <span
+                                  className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform
+                                    ${termsChecked ? 'translate-x-5' : ''}
+                                  `}
+                                />
+                              </button>
+
+                              <span className="text-sm text-white/90">
+                                He leído y acepto los{' '}
+                                <span
+                                  className="underline cursor-pointer font-semibold"
+                                  onClick={() => setShowTermsModal(true)}
+                                >
+                                  Términos y Condiciones
+                                </span>{' '}
+                                del sistema de la Cafetería UNEMI
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       {renderSubmitButton()}
                     </form>
                     
@@ -258,6 +363,60 @@ export default function Login() {
           </div>
         </div>
       </div>
-    </div>
+      {showTermsModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+          onClick={() => setShowTermsModal(false)}
+        >
+          <div
+            className="bg-white text-slate-800 max-w-lg w-full mx-4 rounded-xl shadow-xl flex flex-col max-h-[80vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b">
+              <h2 className="text-lg font-semibold">
+                Términos y Condiciones – Cafetería UNEMI
+              </h2>
+            </div>
+
+            <div className="p-4 overflow-y-auto text-sm space-y-3">
+              <p>
+                El uso de la cafetería institucional de la Universidad Estatal de Milagro
+                está regulado por normativa interna de carácter obligatorio.
+              </p>
+
+              <p className="font-semibold">Condiciones generales:</p>
+
+              <ul className="list-disc pl-5 space-y-2">
+                <li>Servicio exclusivo para personal autorizado.</li>
+                <li>Un (1) producto por pedido.</li>
+                <li>Prohibido manipular equipos o insumos.</li>
+                <li>Respetar turnos y tiempos de permanencia.</li>
+                <li>No conectar dispositivos personales.</li>
+              </ul>
+
+              <p className="font-semibold">Responsabilidades:</p>
+
+              <ul className="list-disc pl-5 space-y-2">
+                <li>Uso adecuado de las instalaciones.</li>
+                <li>Respeto al personal y a otros usuarios.</li>
+                <li>Cumplimiento de horarios establecidos.</li>
+              </ul>
+
+              <p className="font-semibold">Sanciones:</p>
+
+              <p>
+                El incumplimiento podrá generar suspensión temporal o definitiva del
+                servicio, conforme a la normativa interna de la UNEMI.
+              </p>
+
+              <p className="font-medium">
+                La aceptación de estas condiciones queda registrada al iniciar sesión en
+                el sistema.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>    
   );
 };

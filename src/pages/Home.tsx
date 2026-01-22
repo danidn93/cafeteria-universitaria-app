@@ -323,84 +323,79 @@ export default function Home() {
   };
 
   useEffect(() => {
-  if (!user) return;
+    if (!user || !cafeteriaActivaId) return;
 
-  const channel = supabase
-    .channel(`pedidos-home-${user.id}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'pedidos_pwa',
-        filter: `user_id=eq.${user.id}`,
-      },
-      (payload) => {
-        if (payload.new.cafeteria_id !== cafeteriaActivaId) return;
-        fetchPedidos();
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'pedidos_pwa',
-        filter: `user_id=eq.${user.id}`,
-      },
-      async (payload) => {
-        const nuevo = payload.new as any;
+    // 🔄 limpiar notificaciones al cambiar cafetería
+    notifiedRef.current.clear();
 
-        // 🔁 resetear notificación si deja de estar listo
-        if (!readyAfterMountRef.current) return;
+    const channel = supabase
+      .channel(`pedidos-home-${user.id}-${cafeteriaActivaId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pedidos_pwa',
+          filter: `user_id=eq.${user.id}`,
+        },
+        async (payload) => {
+          const nuevo = payload.new as any;
+          if (!nuevo) return;
 
-        if (nuevo.cafeteria_id !== cafeteriaActivaId) return;
+          if (nuevo.cafeteria_id !== cafeteriaActivaId) return;
 
-        const esListo = nuevo.estado === 'listo';
-        const yaNotificado = notifiedRef.current.has(nuevo.id);
-
-        // 🔔 SOLO cuando entra a LISTO mientras la app ya está montada
-        if (esListo && !yaNotificado) {
-          notifiedRef.current.add(nuevo.id);
-
-          await playReadySound();
-
-          toast({
-            title: '☕ ¡Tu pedido está listo!',
-            description: 'Puedes pasar a retirarlo.',
-          });
-
-          if (
-            document.visibilityState !== 'visible' &&
-            Notification.permission === 'granted'
-          ) {
-            new Notification('Pedido listo ☕', {
-              body: 'Tu pedido ya está listo para retirar.',
-              icon: '/assets/logo-notif.png',
-            });
+          // ⛔ NO notificar en montaje inicial
+          if (!readyAfterMountRef.current) {
+            fetchPedidos();
+            return;
           }
+
+          const esListo = nuevo.estado === 'listo';
+          const yaNotificado = notifiedRef.current.has(nuevo.id);
+
+          if (esListo && !yaNotificado) {
+            notifiedRef.current.add(nuevo.id);
+
+            await playReadySound();
+
+            toast({
+              title: '☕ ¡Tu pedido está listo!',
+              description: 'Puedes pasar a retirarlo.',
+            });
+
+            if (
+              document.visibilityState !== 'visible' &&
+              Notification.permission === 'granted'
+            ) {
+              new Notification('Pedido listo ☕', {
+                body: 'Tu pedido ya está listo para retirar.',
+                icon: '/assets/logo-notif.png',
+              });
+            }
+          }
+
+          fetchPedidos();
         }
+      )
+      .subscribe();
 
-        fetchPedidos();
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: 'DELETE',
-        schema: 'public',
-        table: 'pedidos_pwa',
-        filter: `user_id=eq.${user.id}`,
-      },
-      () => fetchPedidos()
-    )
-    .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, cafeteriaActivaId]);
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [user?.id]);
+  useEffect(() => {
+    if (!cafeteriaActivaId) return;
 
+    notifiedRef.current.clear();
+    readyAfterMountRef.current = false;
+
+    const t = setTimeout(() => {
+      readyAfterMountRef.current = true;
+    }, 500); // medio segundo después del montaje
+
+    return () => clearTimeout(t);
+  }, [cafeteriaActivaId]);
 
   useEffect(() => {
     if (!cafeteriaActivaId) return;

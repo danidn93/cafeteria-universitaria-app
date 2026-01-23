@@ -26,7 +26,7 @@ export type SessionUser = {
   fecha_nacimiento: string | null;
   phone: string | null;
 
-  acepta_terminos_cafeteria: boolean;
+  accepted_terms: boolean;
   acepta_terminos_fecha: string | null;
 };
 

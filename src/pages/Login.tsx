@@ -105,7 +105,7 @@ export default function Login() {
     }
 
     // 🚨 SI NO HA ACEPTADO TÉRMINOS ANTES
-    if (!loggedInUser.acepta_terminos_cafeteria) {
+    if (loggedInUser.accepted_terms !== true) {
       if (!termsChecked) {
         toast({
           title: 'Aceptación requerida',

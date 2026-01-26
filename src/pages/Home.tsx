@@ -487,10 +487,17 @@ export default function Home() {
           ['pendiente', 'preparando', 'listo'].includes(p.estado)
         );
 
-        const historial = (data ?? []).filter((p) => p.estado === 'entregado');
+        const historial = (data ?? [])
+          .filter((p) => p.estado === 'entregado')
+          .sort(
+            (a, b) =>
+              new Date(b.updated_at).getTime() -
+              new Date(a.updated_at).getTime()
+          );
 
         setPedidosActivos(activos);
         setPedidosHistorial(historial);
+
       } catch (err: any) {
         console.error('Fetch pedidos error:', err.message);
       } finally {

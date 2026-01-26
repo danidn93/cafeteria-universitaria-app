@@ -92,65 +92,68 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
 
-    const loggedInUser: SessionUser | null = await login(email, password);
+    try {
+      // 1️⃣ Autenticación
+      const loggedInUser: SessionUser | null = await login(email, password);
 
-    if (!loggedInUser) {
+      if (!loggedInUser) {
+        toast({
+          title: 'Error de autenticación',
+          description: 'Correo o contraseña incorrectos',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // 2️⃣ Validación OBLIGATORIA de términos
+      if (!loggedInUser.accepted_terms) {
+        if (!termsChecked) {
+          toast({
+            title: 'Aceptación requerida',
+            description: 'Debes aceptar los Términos y Condiciones para continuar.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        // 3️⃣ Registrar aceptación (solo aquí)
+        const { error } = await supabase
+          .from('app_users')
+          .update({
+            accepted_terms: true,
+            accepted_terms_at: new Date().toISOString(),
+          })
+          .eq('id', loggedInUser.id);
+
+        if (error) {
+          toast({
+            title: 'Error',
+            description: 'No se pudo registrar la aceptación de términos.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        // 4️⃣ Sincronizar sesión / contexto
+        await refreshUser();
+      }
+
+      // 5️⃣ Login exitoso
+      toast({ title: 'Inicio de sesión exitoso' });
+
+      // 6️⃣ Redirección (mantengo tu lógica)
+      navigate('/', { replace: true });
+
+    } catch (err) {
+      console.error(err);
       toast({
-        title: 'Error de autenticación',
-        description: 'Correo o contraseña incorrectos',
+        title: 'Error inesperado',
+        description: 'Ocurrió un problema al iniciar sesión.',
         variant: 'destructive',
       });
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    // 🚨 SI NO HA ACEPTADO TÉRMINOS ANTES
-    if (loggedInUser.accepted_terms !== true) {
-      if (!termsChecked) {
-        toast({
-          title: 'Aceptación requerida',
-          description: 'Debes aceptar los términos y condiciones para continuar.',
-          variant: 'destructive',
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      // ✅ SE GUARDA SOLO AL INICIAR SESIÓN
-      const { error } = await supabase
-        .from('app_users')
-        .update({
-          accepted_terms: true,
-          accepted_terms_at: new Date().toISOString(),
-        })
-        .eq('id', loggedInUser.id);
-
-      if (error) {
-        toast({
-          title: 'Error',
-          description: 'No se pudo registrar la aceptación de términos.',
-          variant: 'destructive',
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      // 🔄 sincroniza cookie + contexto
-      await refreshUser();
-    }
-
-    toast({ title: 'Inicio de sesión exitoso' });
-
-    if (
-      loggedInUser.direccion_slug === 'DAC' ||
-      loggedInUser.direccion_slug === 'DTH'
-    ) {
-      navigate('/', { replace: true });
-    } else {
-      navigate('/', { replace: true });
-    }
-
-    setIsLoading(false);
   };
 
   const handleCheckEmail = async (e: React.FormEvent) => {
@@ -198,14 +201,39 @@ export default function Login() {
   };
 
   const renderSubmitButton = () => {
-    // ... (igual que antes)
     switch (formState) {
       case 'Register':
-        return ( <Button type="submit" className="w-full btn-accent" disabled={isLoading}>{isLoading ? 'Creando...' : 'Crear Cuenta'}</Button> );
+        return (
+          <Button
+            type="submit"
+            className="w-full btn-accent"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Creando...' : 'Crear Cuenta'}
+          </Button>
+        );
+
       case 'CheckEmail':
-        return ( <Button type="submit" className="w-full btn-accent" disabled={isLoading}>{isLoading ? 'Verificando...' : 'Verificar Correo'}</Button> );
+        return (
+          <Button
+            type="submit"
+            className="w-full btn-accent"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Verificando...' : 'Verificar Correo'}
+          </Button>
+        );
+
       default:
-        return ( <Button type="submit" className="w-full btn-accent" disabled={isLoading}>{isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}</Button> );
+        return (
+          <Button
+            type="submit"
+            className="w-full btn-accent"
+            disabled={isLoading || mustAcceptTerms}
+          >
+            {isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+          </Button>
+        );
     }
   };
   
@@ -237,6 +265,11 @@ export default function Login() {
   };
 
   const { title, description } = getCardHeader();
+  
+  const mustAcceptTerms =
+    formState === 'Login' &&
+    correoAceptoTerminos === false &&
+    !termsChecked;
 
   return (
     // ¡Tu JSX se mantiene! (Con la clase 'unemi' y el fondo que te gusta)
@@ -346,6 +379,11 @@ export default function Login() {
                               </label>
                             </div>
                           </div>
+                        )}
+                        {mustAcceptTerms && (
+                          <p className="mt-2 text-xs text-[hsl(var(--unemi-white))] text-white">
+                            Debes aceptar los Términos y Condiciones para continuar.
+                          </p>
                         )}
                       {renderSubmitButton()}
                     </form>

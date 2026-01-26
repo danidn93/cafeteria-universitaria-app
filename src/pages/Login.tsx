@@ -176,14 +176,31 @@ export default function Login() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+
     const result = await register(email, password);
     
     if (result.status === 'success') {
-      toast({ title: '¡Registro Exitoso!', description: 'Ahora puedes iniciar sesión.' });
+      toast({
+        title: '¡Registro Exitoso!',
+        description: 'Ahora puedes iniciar sesión.',
+      });
+
+      // 🔥 LIMPIAR CREDENCIALES
+      setEmail('');
+      setPassword('');
+      setTermsChecked(false);
+      setCorreoAceptoTerminos(null);
+
+      // Volver a Login limpio
       setFormState('Login');
     } else {
-      toast({ title: 'Error de Registro', description: result.message, variant: 'destructive' });
+      toast({
+        title: 'Error de Registro',
+        description: result.message,
+        variant: 'destructive',
+      });
     }
+
     setIsLoading(false);
   };
   

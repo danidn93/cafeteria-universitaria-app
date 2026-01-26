@@ -721,23 +721,35 @@ export default function Home() {
   }, [user?.id, cafeteriaActivaId, fetchPedidos]);
 
   const evaluateOrderBlock = useCallback(() => {
-    const lastActive = pedidosActivos[0];
-    const lastHistorical = pedidosHistorial[0];
+    // 1️⃣ PRIORIDAD ABSOLUTA: pedido entregado NO calificado
+    const pendienteCalificacion = pedidosHistorial.find(
+      (p) => p.estado === 'entregado' && !p.calificado
+    );
 
-    const mostRecent: Pedido | null = lastActive || lastHistorical || null;
+    if (pendienteCalificacion) {
+      blockRef.current = {
+        reason: 'RATING_LOCK',
+        expiresAt: null,
+      };
+      setBlockReason('RATING_LOCK');
+      setCountdownDisplay(null);
+      return;
+    }
 
-    // ✅ NO hay pedidos → desbloquear
-    if (!mostRecent) {
+    // 2️⃣ TIME LOCK (basado en el pedido MÁS RECIENTE)
+    const ultimoPedido =
+      pedidosActivos[0] || pedidosHistorial[0] || null;
+
+    if (!ultimoPedido) {
       blockRef.current = { reason: null, expiresAt: null };
       setBlockReason(null);
       setCountdownDisplay(null);
       return;
     }
 
-    const createdAt = new Date(mostRecent.created_at);
-
-    // 🕒 TIME LOCK (1 hora)
+    const createdAt = new Date(ultimoPedido.created_at);
     const expires = new Date(createdAt.getTime() + 60 * 60 * 1000);
+
     if (expires.getTime() > Date.now()) {
       blockRef.current = {
         reason: 'TIME_LOCK',
@@ -747,17 +759,7 @@ export default function Home() {
       return;
     }
 
-    // ⭐ RATING LOCK
-    if (mostRecent.estado === 'entregado' && !mostRecent.calificado) {
-      blockRef.current = {
-        reason: 'RATING_LOCK',
-        expiresAt: null,
-      };
-      setBlockReason('RATING_LOCK');
-      return;
-    }
-
-    // ✅ Nada aplica → desbloquear
+    // 3️⃣ DESBLOQUEAR
     blockRef.current = { reason: null, expiresAt: null };
     setBlockReason(null);
     setCountdownDisplay(null);

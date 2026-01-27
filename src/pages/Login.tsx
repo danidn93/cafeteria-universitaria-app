@@ -40,6 +40,8 @@ export default function Login() {
   const [termsChecked, setTermsChecked] = useState(false);
   const [correoAceptoTerminos, setCorreoAceptoTerminos] = useState<boolean | null>(null);
 
+  const [sendingReset, setSendingReset] = useState(false);
+
   const validarTerminosPorCorreoLogin = async (email: string) => {
     if (!email) {
       setCorreoAceptoTerminos(null);
@@ -86,6 +88,43 @@ export default function Login() {
     if (user) {
       return <Navigate to="/" replace />;
     }
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      toast({
+        title: 'Correo requerido',
+        description: 'Ingresa tu correo institucional.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setSendingReset(true);
+
+      // Llama a la Edge Function
+      const { error } = await supabase.functions.invoke('request-password-reset', {
+        body: { email: email.toLowerCase() },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Solicitud enviada',
+        description:
+          'Si el correo existe, recibirás un enlace para restablecer tu contraseña.',
+      });
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: 'Error',
+        description: 'No se pudo procesar la solicitud.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingReset(false);
+    }
+  };
 
   // ¡¡¡ ESTA ES LA CORRECCIÓN !!!
   const handleLogin = async (e: React.FormEvent) => {
@@ -401,6 +440,17 @@ export default function Login() {
                           <p className="mt-2 text-xs text-[hsl(var(--unemi-white))] text-white">
                             Debes aceptar los Términos y Condiciones para continuar.
                           </p>
+                        )}
+                        {formState === 'Login' && (
+                          <Button
+                            type="button"
+                            variant="link"
+                            className="w-full mt-2 text-white/80 hover:text-white"
+                            disabled={sendingReset}
+                            onClick={handleForgotPassword}
+                          >
+                            {sendingReset ? 'Enviando enlace...' : '¿Olvidaste tu contraseña?'}
+                          </Button>
                         )}
                       {renderSubmitButton()}
                     </form>

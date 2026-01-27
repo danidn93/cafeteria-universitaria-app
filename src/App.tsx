@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
+import ResetPassword from './pages/ResetPassword';
 
 // Componente para proteger rutas (solo requiere autenticación)
 const ProtectedRoute = () => {
@@ -32,6 +33,7 @@ const App = () => {
       <Routes>
         {/* Rutas Públicas */}
         <Route path="/login" element={<Login />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         
         {/* Ruta Protegida: Todo el contenido va a Home (/) */}
         <Route element={<ProtectedRoute />}>

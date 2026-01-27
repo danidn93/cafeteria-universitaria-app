@@ -1680,8 +1680,20 @@ function PedidosHistorialList({
 
         <div className="space-y-4">
           {historial.map((pedido) => (
-            <Card key={pedido.id} className="dashboard-card opacity-70">
+            <Card
+              key={pedido.id}
+              className={`dashboard-card transition-all ${
+                pedido.calificado
+                  ? 'opacity-70'
+                  : 'border-2 border-orange-400 bg-orange-400/10 shadow-lg animate-pulse'
+              }`}
+            >
               <CardHeader>
+                {!pedido.calificado && (
+                  <span className="inline-block mt-2 text-xs font-semibold px-2 py-1 rounded bg-orange-500 text-white">
+                    Pendiente de calificar
+                  </span>
+                )}
                 <CardTitle className="font-aventura text-white/70">Entregado</CardTitle>
                 <CardDescription className="text-white/70">
                   Pedido del{' '}

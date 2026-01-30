@@ -263,7 +263,6 @@ export default function Home() {
   const [config, setConfig] = useState<Config | null>(null);
 
   const [showBirthdayModal, setShowBirthdayModal] = useState(false);
-  const [userAge, setUserAge] = useState<number | null>(null);
 
   const [loadingItems, setLoadingItems] = useState(true);
   const [loadingPedidos, setLoadingPedidos] = useState(true);
@@ -382,7 +381,6 @@ export default function Home() {
         ) {
           age--;
         }
-        setUserAge(age);
         localStorage.setItem('birthdayModalShown', todayKey);
       }
     } catch (e) {
@@ -1060,7 +1058,6 @@ export default function Home() {
         isOpen={showBirthdayModal}
         onClose={() => setShowBirthdayModal(false)}
         name={user?.name?.split(' ')[0] || 'Empleado'}
-        age={userAge}
       />
 
       <main className="container mx-auto px-4 py-6">
@@ -1934,13 +1931,11 @@ function RatingDialog({
 function BirthdayModal({
   isOpen,
   onClose,
-  name,
-  age,
+  name, 
 }: {
   isOpen: boolean;
   onClose: () => void;
   name: string;
-  age: number | null;
 }) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -1954,7 +1949,7 @@ function BirthdayModal({
           </motion.div>
 
           <DialogTitle className="font-aventura text-3xl text-neutral-900">
-            ¡Feliz Cumpleaños {age ? `${age} ` : ''}, {name}!
+            ¡Feliz Cumpleaños, {name}!
           </DialogTitle>
 
           <DialogDescription className="text-neutral-600">

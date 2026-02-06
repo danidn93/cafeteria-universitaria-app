@@ -5,10 +5,6 @@ import { useAuth } from '@/context/AuthContext';
 import type { SessionUser } from '@/context/AuthContext';
 import { supabase } from '@/services/supabaseClient';
 
-import adminBgDesktop from '/assets/admin-bg-ordinario.png';
-import adminBgMobile from '/assets/movil-bg-ordinario.png';
-import logo from '/assets/logo-admin-ordinario.png';
-
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -88,6 +84,9 @@ interface Config {
   nombre_local: string;
   horario: string;
   horario_arr: string[];
+  logo_url?: string | null;
+  hero_bg_url?: string | null;
+  movil_bg?: string | null;
 }
 
 interface Cafeteria {
@@ -253,7 +252,6 @@ async function ensurePushSubscription(userId: string) {
 export default function Home() {
   const { user, logout, refreshUser } = useAuth();
 
-  const [bgUrl, setBgUrl] = useState<string>(adminBgMobile);
   const [minH, setMinH] = useState<string>('100svh');
 
   const [items, setItems] = useState<Item[]>([]);
@@ -332,14 +330,6 @@ export default function Home() {
       });
     }
   }, [audioUnlocked, pedidosActivos]);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)');
-    const applyBg = () => setBgUrl(mq.matches ? adminBgDesktop : adminBgMobile);
-    applyBg();
-    mq.addEventListener('change', applyBg);
-    return () => mq.removeEventListener('change', applyBg);
-  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -954,7 +944,13 @@ export default function Home() {
       <div className="absolute inset-0 -z-10">
         <div
           className="h-full w-full bg-no-repeat bg-center bg-cover"
-          style={{ backgroundImage: `url(${bgUrl})` }}
+          style={{
+            backgroundImage: `url(${
+              window.innerWidth < 768
+                ? config?.movil_bg || config?.hero_bg_url
+                : config?.hero_bg_url
+            })`,
+          }}
         />
         <div className="absolute inset-0 bg-[hsl(200_100%_13.5%/_0.88)]" />
       </div>
@@ -1013,7 +1009,7 @@ export default function Home() {
 
         <div className="flex items-center gap-2">
           <img
-            src={logo}
+            src={config?.logo_url || undefined}
             alt="Logo"
             className="h-10 w-10 rounded-full border-2 border-unemi-orange bg-white object-contain"
           />

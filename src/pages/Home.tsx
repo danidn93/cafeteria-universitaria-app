@@ -950,6 +950,7 @@ export default function Home() {
                 ? config?.movil_bg || config?.hero_bg_url
                 : config?.hero_bg_url
             })`,
+            backgroundAttachment: 'fixed',
           }}
         />
         <div className="absolute inset-0 bg-[hsl(200_100%_13.5%/_0.88)]" />
@@ -1011,7 +1012,7 @@ export default function Home() {
           <img
             src={config?.logo_url || undefined}
             alt="Logo"
-            className="h-10 w-10 rounded-full border-2 border-unemi-orange bg-white object-contain"
+            className="h-20 w-20 rounded-full border-2 border-unemi-orange bg-white object-contain"
           />
         </div>
 

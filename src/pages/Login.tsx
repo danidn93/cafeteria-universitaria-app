@@ -13,12 +13,9 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/components/hooks/use-toast';
 import { supabase } from '@/services/supabaseClient';
 
-// Tus Imágenes
-import adminBgDesktop from '/assets/admin-bg-ordinario.png';
-import adminBgMobile from '/assets/movil-bg-ordinario.png';
-import logo from '/assets/logo-admin-ordinario.png';
-
 type FormState = 'Login' | 'CheckEmail' | 'Register';
+
+const BRANDING_ID = 'f2af9d41-f82c-47fa-953e-862cc562a20c';
 
 export default function Login() {
   const { user, login, checkEmail, register, refreshUser, loading } = useAuth();
@@ -29,7 +26,7 @@ export default function Login() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [bgUrl, setBgUrl] = useState<string>(adminBgMobile);
+  const [bgUrl, setBgUrl] = useState<string>('');
   const [minH, setMinH] = useState<string>('100svh');
   
   const [formState, setFormState] = useState<FormState>('Login');
@@ -41,6 +38,26 @@ export default function Login() {
   const [correoAceptoTerminos, setCorreoAceptoTerminos] = useState<boolean | null>(null);
 
   const [sendingReset, setSendingReset] = useState(false);
+
+  const [branding, setBranding] = useState<{
+    logo_url?: string | null;
+    hero_bg_url?: string | null;
+    movil_bg?: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchBranding = async () => {
+      const { data } = await supabase
+        .from('configuracion')
+        .select('logo_url, hero_bg_url, movil_bg')
+        .eq('id', BRANDING_ID)
+        .single();
+
+      if (data) setBranding(data);
+    };
+
+    fetchBranding();
+  }, []);
 
   const validarTerminosPorCorreoLogin = async (email: string) => {
     if (!email) {
@@ -64,12 +81,21 @@ export default function Login() {
 
   // Tu useEffect para el fondo (¡Perfecto!)
   useEffect(() => {
+    if (!branding) return;
+
     const mq = window.matchMedia('(min-width: 1024px)');
-    const applyBg = () => setBgUrl(mq.matches ? adminBgDesktop : adminBgMobile);
+
+    const applyBg = () =>
+      setBgUrl(mq.matches
+        ? branding.hero_bg_url || ''
+        : branding.movil_bg || branding.hero_bg_url || ''
+      );
+
     applyBg();
     mq.addEventListener('change', applyBg);
     return () => mq.removeEventListener('change', applyBg);
-  }, []);
+
+  }, [branding]);
 
   useEffect(() => {
     const setVh = () => {
@@ -346,7 +372,22 @@ export default function Login() {
                 <Card className="w-full dashboard-card bg-white/10 backdrop-blur-md border-white/10">
                   <CardHeader className="text-center space-y-3">
                     <div className="mx-auto bg-white rounded-full p-1 shadow-md ring-2 ring-[hsl(24_100%_50%/_0.6)] w-max">
-                      <img src={logo} alt="Logo" className="h-16 w-16 sm:h-20 sm:w-20 rounded-full object-contain bg-white" draggable={false} />
+                      <img
+                        src={branding?.logo_url || undefined}
+                        alt="Logo"
+                        draggable={false}
+                        className="
+                          h-20 w-20
+                          sm:h-24 sm:w-24
+                          rounded-full
+                          object-contain
+                          bg-white
+                          shadow-lg
+                          hover:scale-105
+                          transition-transform
+                          duration-200
+                        "
+                      />
                     </div>
                     <CardTitle className="text-2xl font-aventura tracking-wide">{title}</CardTitle>
                     <CardDescription className="card-subtitle text-white/85">{description}</CardDescription>

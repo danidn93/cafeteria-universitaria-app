@@ -1907,16 +1907,30 @@ function RatingDialog({
             />
 
             <DialogFooter>
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={handleSubmit}
-                disabled={isSubmitting || rating === 0}
-              >
-                {isSubmitting
-                  ? 'Enviando...'
-                  : `Enviar Calificación (${rating} Estrellas)`}
-              </Button>
+              <div className="w-full">
+                <Button
+                  variant={null as any}
+                  className="
+                    w-full
+                    bg-[#FF6900]
+                    hover:bg-[#ff7a1f]
+                    text-white
+                    font-semibold
+                    shadow-lg
+                    active:scale-[0.98]
+                    transition-all
+                    disabled:opacity-50
+                  "
+
+                  onClick={handleSubmit}
+                  disabled={isSubmitting || rating === 0}
+                >
+
+                  {isSubmitting
+                    ? 'Enviando...'
+                    : `Enviar Calificación (${rating} Estrellas)`}
+                </Button>
+              </div>
             </DialogFooter>
           </>
         )}

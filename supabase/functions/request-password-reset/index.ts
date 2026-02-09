@@ -48,6 +48,20 @@ serve(async (req) => {
     );
 
     /* ===============================
+      BRANDING
+    ================================ */
+
+    const { data: branding } = await supabase
+      .from("configuracion")
+      .select("logo_url, nombre_local")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    const logoUrl = branding?.logo_url || "";
+    const nombreLocal = branding?.nombre_local || "Cafetería UNEMI";
+
+    /* ===============================
        BUSCAR USUARIO EN app_users
     ================================ */
     const { data: user } = await supabase
@@ -117,61 +131,64 @@ serve(async (req) => {
     btoa(unescape(encodeURIComponent(fromName))) +
     "?=";
 
-    const logoUrl =
-      "https://raw.githubusercontent.com/danidn93/mineduc/main/logo-admin-ordinario.png";
-
     /* ===============================
        LOGO BASE64 (CID)
        ⚠️ Reemplaza por el base64 REAL
     ================================ */
     const logoBase64 = `
-iVBORw0KGgoAAAANSUhEUgAA...REEMPLAZA_ESTO...==
-`.replace(/\s+/g, "");
+      iVBORw0KGgoAAAANSUhEUgAA...REEMPLAZA_ESTO...==
+      `.replace(/\s+/g, "");
 
     /* ===============================
        HTML
     ================================ */
     const html = `
-<div style="font-family:Arial,sans-serif;background:#f4f4f4;padding:20px">
-  <div style="max-width:600px;margin:auto;background:#ffffff;padding:20px;border-radius:8px">
-    <div style="text-align:center;margin-bottom:20px">
-      <img src="${logoUrl}" style="max-width:260px" alt="Cafetería UNEMI" />
+    <div style="font-family:Arial,sans-serif;background:#f4f4f4;padding:20px">
+      <div style="max-width:600px;margin:auto;background:#ffffff;padding:20px;border-radius:8px">
+        ${
+          logoUrl
+            ? `
+          <div style="text-align:center;margin-bottom:20px">
+            <img src="${logoUrl}" style="max-width:220px" alt="${nombreLocal}" />
+          </div>
+        `
+            : ""
+        }
+
+        <p style="font-size:16px;color:#002334">
+          Hola <strong>${user.name || user.username}</strong>,
+        </p>
+
+        <p style="font-size:15px;color:#333">
+          Hemos recibido una solicitud para restablecer tu contraseña en ${nombreLocal}.
+        </p>
+
+        <p style="text-align:center;margin:30px 0">
+          <a href="${resetUrl}" target="_blank"
+            style="
+              background:#ff6a00;
+              color:white;
+              padding:12px 24px;
+              border-radius:6px;
+              text-decoration:none;
+              font-weight:bold;
+              font-size:16px;
+            ">
+            Restablecer contraseña
+          </a>
+        </p>
+
+        <p style="font-size:14px;color:#555">
+          Este enlace es válido por <strong>30 minutos</strong>.
+        </p>
+
+        <p style="font-size:15px;color:#333;margin-top:30px">
+          Saludos,<br/>
+          Cafetería UNEMI
+        </p>
+      </div>
     </div>
-
-    <p style="font-size:16px;color:#002334">
-      Hola <strong>${user.name || user.username}</strong>,
-    </p>
-
-    <p style="font-size:15px;color:#333">
-      Hemos recibido una solicitud para restablecer tu contraseña.
-    </p>
-
-    <p style="text-align:center;margin:30px 0">
-      <a href="${resetUrl}" target="_blank"
-        style="
-          background:#ff6a00;
-          color:white;
-          padding:12px 24px;
-          border-radius:6px;
-          text-decoration:none;
-          font-weight:bold;
-          font-size:16px;
-        ">
-        Restablecer contraseña
-      </a>
-    </p>
-
-    <p style="font-size:14px;color:#555">
-      Este enlace es válido por <strong>30 minutos</strong>.
-    </p>
-
-    <p style="font-size:15px;color:#333;margin-top:30px">
-      Saludos,<br/>
-      Cafetería UNEMI
-    </p>
-  </div>
-</div>
-`;
+    `;
 
     /* ===============================
        MIME MULTIPART (HTML + CID)

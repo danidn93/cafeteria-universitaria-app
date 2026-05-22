@@ -76,6 +76,7 @@ interface Pedido {
   created_at: string;
   updated_at: string;
   calificado: boolean;
+  cafeteria_id: string | null;
   items: { item_nombre: string; cantidad: number }[];
 }
 
@@ -258,6 +259,8 @@ export default function Home() {
   const [order, setOrder] = useState<OrderItem[]>([]);
   const [pedidosActivos, setPedidosActivos] = useState<Pedido[]>([]);
   const [pedidosHistorial, setPedidosHistorial] = useState<Pedido[]>([]);
+  const [pedidosBloqueoGlobal, setPedidosBloqueoGlobal] = useState<Pedido[]>([]);
+  const [blockCafeteriaName, setBlockCafeteriaName] = useState<string | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
 
   const [showBirthdayModal, setShowBirthdayModal] = useState(false);
@@ -287,9 +290,11 @@ export default function Home() {
   const blockRef = useRef<{
     reason: BlockReasonCode | null;
     expiresAt: Date | null;
+    cafeteriaName: string | null;
   }>({
     reason: null,
     expiresAt: null,
+    cafeteriaName: null,
   });
 
   useEffect(() => {
@@ -450,7 +455,7 @@ export default function Home() {
 
   const fetchPedidos = useCallback(
     async (silent = false) => {
-      if (!user || !cafeteriaActivaId) return;
+      if (!user || !cafeteriaActivaId || cafeteriaIds.length === 0) return;
 
       if (!silent) setLoadingPedidos(true);
 
@@ -458,24 +463,32 @@ export default function Home() {
         const { data, error } = await supabase
           .from('pedidos_pwa')
           .select(`
-            id, estado, created_at, updated_at, calificado,
+            id, estado, created_at, updated_at, calificado, cafeteria_id,
             items:pedido_pwa_items ( item_nombre, cantidad )
           `)
           .eq('user_id', user.id)
-          .eq('cafeteria_id', cafeteriaActivaId)
+          .in('cafeteria_id', cafeteriaIds)
           .order('updated_at', { ascending: false });
 
         if (error) throw error;
 
-        (data ?? []).forEach((p) => {
+        const pedidos = data ?? [];
+
+        pedidos.forEach((p) => {
           pedidosEstadoRef.current[p.id] = p.estado;
         });
 
-        const activos = (data ?? []).filter((p) =>
+        setPedidosBloqueoGlobal(pedidos);
+
+        const pedidosCafeteriaActiva = pedidos.filter(
+          (p) => p.cafeteria_id === cafeteriaActivaId
+        );
+
+        const activos = pedidosCafeteriaActiva.filter((p) =>
           ['pendiente', 'preparando', 'listo'].includes(p.estado)
         );
 
-        const historial = (data ?? [])
+        const historial = pedidosCafeteriaActiva
           .filter((p) => p.estado === 'entregado')
           .sort(
             (a, b) =>
@@ -485,14 +498,13 @@ export default function Home() {
 
         setPedidosActivos(activos);
         setPedidosHistorial(historial);
-
       } catch (err: any) {
         console.error('Fetch pedidos error:', err.message);
       } finally {
         if (!silent) setLoadingPedidos(false);
       }
     },
-    [user?.id, cafeteriaActivaId]
+    [user?.id, cafeteriaActivaId, cafeteriaIds]
   );
 
   useEffect(() => {
@@ -716,28 +728,48 @@ export default function Home() {
   }, [user?.id, cafeteriaActivaId, fetchPedidos]);
 
   const evaluateOrderBlock = useCallback(() => {
-    // 1️⃣ PRIORIDAD ABSOLUTA: pedido entregado NO calificado
-    const pendienteCalificacion = pedidosHistorial.find(
+    const getCafeName = (cafeteriaId: string | null) => {
+      if (!cafeteriaId) return null;
+      return cafeterias.find((c) => c.id === cafeteriaId)?.nombre_local ?? null;
+    };
+
+    const pedidosParaBloqueo =
+      cafeteriaIds.length > 1 ? pedidosBloqueoGlobal : pedidosHistorial.concat(pedidosActivos);
+
+    const pendienteCalificacion = pedidosParaBloqueo.find(
       (p) => p.estado === 'entregado' && !p.calificado
     );
 
     if (pendienteCalificacion) {
+      const cafeName = getCafeName(pendienteCalificacion.cafeteria_id);
+
       blockRef.current = {
         reason: 'RATING_LOCK',
         expiresAt: null,
+        cafeteriaName: cafeName,
       };
+
       setBlockReason('RATING_LOCK');
+      setBlockCafeteriaName(cafeName);
       setCountdownDisplay(null);
       return;
     }
 
-    // 2️⃣ TIME LOCK (basado en el pedido MÁS RECIENTE)
-    const ultimoPedido =
-      pedidosActivos[0] || pedidosHistorial[0] || null;
+    const ultimoPedido = [...pedidosParaBloqueo]
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() -
+          new Date(a.created_at).getTime()
+      )[0] ?? null;
 
     if (!ultimoPedido) {
-      blockRef.current = { reason: null, expiresAt: null };
+      blockRef.current = {
+        reason: null,
+        expiresAt: null,
+        cafeteriaName: null,
+      };
       setBlockReason(null);
+      setBlockCafeteriaName(null);
       setCountdownDisplay(null);
       return;
     }
@@ -746,19 +778,34 @@ export default function Home() {
     const expires = new Date(createdAt.getTime() + 60 * 60 * 1000);
 
     if (expires.getTime() > Date.now()) {
+      const cafeName = getCafeName(ultimoPedido.cafeteria_id);
+
       blockRef.current = {
         reason: 'TIME_LOCK',
         expiresAt: expires,
+        cafeteriaName: cafeName,
       };
+
       setBlockReason('TIME_LOCK');
+      setBlockCafeteriaName(cafeName);
       return;
     }
 
-    // 3️⃣ DESBLOQUEAR
-    blockRef.current = { reason: null, expiresAt: null };
+    blockRef.current = {
+      reason: null,
+      expiresAt: null,
+      cafeteriaName: null,
+    };
     setBlockReason(null);
+    setBlockCafeteriaName(null);
     setCountdownDisplay(null);
-  }, [pedidosActivos, pedidosHistorial]);
+  }, [
+    cafeteriaIds.length,
+    cafeterias,
+    pedidosActivos,
+    pedidosHistorial,
+    pedidosBloqueoGlobal,
+  ]);
 
   useEffect(() => {
     if (!loadingPedidos) {
@@ -801,9 +848,15 @@ export default function Home() {
   }, [blockReason]);
 
   const isOrderBlocked = !!blockReason;
+  const hasMultipleCafeterias = cafeteriaIds.length > 1;
+
   const finalBlockReason =
     blockReason === 'RATING_LOCK'
-      ? 'Debes calificar tu último pedido. (Ver en "Mis Pedidos")'
+      ? hasMultipleCafeterias && blockCafeteriaName
+        ? `Debes calificar tu último pedido en ${blockCafeteriaName} para pedir de nuevo.`
+        : 'Debes calificar tu último pedido. (Ver en "Mis Pedidos")'
+      : hasMultipleCafeterias && blockCafeteriaName && countdownDisplay
+      ? `Bloqueo por pedido reciente en ${blockCafeteriaName}. ${countdownDisplay}`
       : countdownDisplay;
 
   const handleUpdateQuantity = (item: Item, action: 'inc' | 'dec') => {

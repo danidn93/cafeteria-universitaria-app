@@ -639,6 +639,7 @@ export default function Home() {
                 created_at: new Date().toISOString(),
                 updated_at: nuevo.updated_at ?? new Date().toISOString(),
                 calificado: false,
+                cafeteria_id: nuevo.cafeteria_id,
                 items: [],
               },
               ...prev,
@@ -824,9 +825,14 @@ export default function Home() {
         const diff = blockRef.current.expiresAt.getTime() - Date.now();
 
         if (diff <= 0) {
-          blockRef.current = { reason: null, expiresAt: null };
+          blockRef.current = {
+            reason: null,
+            expiresAt: null,
+            cafeteriaName: null,
+          };
+
           setBlockReason(null);
-          
+          setBlockCafeteriaName(null);
           setCountdownDisplay(null);
           return;
         }

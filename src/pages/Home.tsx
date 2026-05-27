@@ -1148,7 +1148,20 @@ export default function Home() {
 
             <PedidosActivosWidget loading={loadingPedidos} activos={pedidosActivos} />
 
-            {loadingItems ? (
+            {cafeterias.length > 1 && !cafeteriaActivaId ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <Coffee className="h-16 w-16 text-white/40 mb-4" />
+            
+                <h3 className="text-2xl font-bold text-white mb-2">
+                  Selecciona una cafetería
+                </h3>
+            
+                <p className="text-white/70 max-w-md">
+                  Debes seleccionar una cafetería para poder visualizar los productos disponibles
+                  y realizar pedidos.
+                </p>
+              </div>
+            ) : loadingItems ? (
               <div className="text-center py-10">
                 <Coffee className="h-12 w-12 mx-auto animate-pulse text-white/70" />
                 <p className="text-white/70 mt-2">Cargando menú...</p>

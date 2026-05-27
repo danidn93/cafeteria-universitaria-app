@@ -88,6 +88,7 @@ interface Config {
   logo_url?: string | null;
   hero_bg_url?: string | null;
   movil_bg?: string | null;
+  updated_at?: string | null;
 }
 
 interface Cafeteria {
@@ -249,6 +250,13 @@ async function ensurePushSubscription(userId: string) {
     console.warn('[PUSH] error silencioso', err);
   }
 }
+
+const getVersionedUrl = (url?: string | null, version?: string | null) => {
+  if (!url) return '';
+  return `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(
+    version ?? Date.now().toString()
+  )}`;
+};
 
 export default function Home() {
   const { user, logout, refreshUser } = useAuth();
@@ -1004,11 +1012,12 @@ export default function Home() {
         <div
           className="h-full w-full bg-no-repeat bg-center bg-cover"
           style={{
-            backgroundImage: `url(${
+            backgroundImage: `url(${getVersionedUrl(
               window.innerWidth < 768
                 ? config?.movil_bg || config?.hero_bg_url
-                : config?.hero_bg_url
-            })`,
+                : config?.hero_bg_url,
+              config?.updated_at
+            )})`,
             backgroundAttachment: 'fixed',
           }}
         />
@@ -1069,7 +1078,7 @@ export default function Home() {
 
         <div className="flex items-center gap-2">
           <img
-            src={config?.logo_url || undefined}
+            src={getVersionedUrl(config?.logo_url, config?.updated_at) || undefined}
             alt="Logo"
             className="h-20 w-20 rounded-full border-2 border-unemi-orange bg-white object-contain"
           />

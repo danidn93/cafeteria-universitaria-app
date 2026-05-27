@@ -17,6 +17,13 @@ type FormState = 'Login' | 'CheckEmail' | 'Register';
 
 const BRANDING_ID = 'f2af9d41-f82c-47fa-953e-862cc562a20c';
 
+const getVersionedUrl = (url?: string | null, version?: string | null) => {
+  if (!url) return '';
+  return `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(
+    version ?? Date.now().toString()
+  )}`;
+};
+
 export default function Login() {
   const { user, login, checkEmail, register, refreshUser, loading } = useAuth();
   const [email, setEmail] = useState('');
@@ -43,13 +50,14 @@ export default function Login() {
     logo_url?: string | null;
     hero_bg_url?: string | null;
     movil_bg?: string | null;
+    updated_at?: string | null;
   } | null>(null);
 
   useEffect(() => {
     const fetchBranding = async () => {
       const { data } = await supabase
         .from('configuracion')
-        .select('logo_url, hero_bg_url, movil_bg')
+        .select('logo_url, hero_bg_url, movil_bg, updated_at')
         .eq('id', BRANDING_ID)
         .single();
 
@@ -86,9 +94,13 @@ export default function Login() {
     const mq = window.matchMedia('(min-width: 1024px)');
 
     const applyBg = () =>
-      setBgUrl(mq.matches
-        ? branding.hero_bg_url || ''
-        : branding.movil_bg || branding.hero_bg_url || ''
+      setBgUrl(
+        getVersionedUrl(
+          mq.matches
+            ? branding.hero_bg_url || ''
+            : branding.movil_bg || branding.hero_bg_url || '',
+          branding.updated_at
+        )
       );
 
     applyBg();
@@ -373,7 +385,7 @@ export default function Login() {
                   <CardHeader className="text-center space-y-3">
                     <div className="mx-auto bg-white rounded-full p-1 shadow-md ring-2 ring-[hsl(24_100%_50%/_0.6)] w-max">
                       <img
-                        src={branding?.logo_url || undefined}
+                        src={getVersionedUrl(branding?.logo_url, branding?.updated_at) || undefined}
                         alt="Logo"
                         draggable={false}
                         className="

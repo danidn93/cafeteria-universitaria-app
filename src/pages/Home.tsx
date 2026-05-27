@@ -1352,6 +1352,13 @@ function OrderLockWidget({
 }
 
 function RankingWidget({ loading, ranking }: { loading: boolean; ranking: number | null }) {
+  if (loading)
+    return (
+      <div className="text-center py-6">
+        <Loader2 className="h-8 w-8 mx-auto animate-spin text-white/70" />
+        <p className="text-white/70 mt-2">Cargando tu ranking...</p>
+      </div>
+    );
 
   if (!ranking) return null;
 

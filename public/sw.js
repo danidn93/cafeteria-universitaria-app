@@ -1,28 +1,28 @@
-const CACHE_NAME = "cafeteria-unemi-v1.0.1";
+const SW_VERSION = "2026-06-29-04";
 
-self.addEventListener("install", (event) => {
-  console.log("[SW] Instalando...");
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  console.log("[SW] Activando...");
-
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((k) => k !== CACHE_NAME)
-          .map((k) => caches.delete(k))
-      )
-    )
+    Promise.all([
+      caches.keys().then((keys) =>
+        Promise.all(keys.map((key) => caches.delete(key)))
+      ),
+      self.clients.claim(),
+    ])
   );
-
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   event.respondWith(fetch(event.request));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("push", (event) => {
@@ -38,10 +38,4 @@ self.addEventListener("push", (event) => {
       data,
     })
   );
-});
-
-self.addEventListener("message", (event) => {
-  if (event.data?.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
 });

@@ -1,37 +1,45 @@
 export function registerPwaUpdater() {
   if (!("serviceWorker" in navigator)) return;
 
+  let refreshing = false;
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
+
   window.addEventListener("load", async () => {
-    const registration = await navigator.serviceWorker.register("/sw.js");
-
-    console.log("[PWA] SW registrado");
-
-    // Busca una nueva versión cada minuto
-    setInterval(() => {
-      registration.update();
-    }, 60000);
-
-    registration.addEventListener("updatefound", () => {
-      const newWorker = registration.installing;
-
-      if (!newWorker) return;
-
-      newWorker.addEventListener("statechange", () => {
-        if (
-          newWorker.state === "installed" &&
-          navigator.serviceWorker.controller
-        ) {
-          console.log("[PWA] Nueva versión encontrada");
-
-          newWorker.postMessage({
-            type: "SKIP_WAITING",
-          });
-        }
+    try {
+      const registration = await navigator.serviceWorker.register("/sw.js", {
+        updateViaCache: "none",
       });
-    });
 
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      window.location.reload();
-    });
+      await registration.update();
+
+      setInterval(() => {
+        registration.update();
+      }, 5 * 60 * 1000);
+
+      if (registration.waiting) {
+        registration.waiting.postMessage({ type: "SKIP_WAITING" });
+      }
+
+      registration.addEventListener("updatefound", () => {
+        const newWorker = registration.installing;
+        if (!newWorker) return;
+
+        newWorker.addEventListener("statechange", () => {
+          if (
+            newWorker.state === "installed" &&
+            navigator.serviceWorker.controller
+          ) {
+            newWorker.postMessage({ type: "SKIP_WAITING" });
+          }
+        });
+      });
+    } catch (error) {
+      console.error("[PWA] Error registrando SW", error);
+    }
   });
 }

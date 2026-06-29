@@ -1687,20 +1687,6 @@ function ProductGrid({
                 disabled ? 'opacity-40 grayscale' : ''
               }`}
             >
-              <CardHeader className="p-4 pb-0">
-                <div className="rounded-lg aspect-video border border-white/15 bg-white/10 flex items-center justify-center px-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="bg-white/10 text-white border-white/30 hover:bg-white/20 hover:text-white"
-                    onClick={() => openPreview(item)}
-                  >
-                    <ImageIcon className="mr-2 h-4 w-4" />
-                    Ver imagen
-                  </Button>
-                </div>
-              </CardHeader>
-
               <CardContent className="p-4 flex-grow">
                 <CardTitle className="font-aventura text-lg">{item.nombre}</CardTitle>
                 <CardDescription className="text-sm mt-1 opacity-80">
@@ -1731,6 +1717,16 @@ function ProductGrid({
                     <span className="w-10 text-center text-xl font-bold">{quantity}</span>
                   </div>
                 )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full bg-white/10 text-white border-white/30 hover:bg-white/20 hover:text-white"
+                  onClick={() => openPreview(item)}
+                >
+                  <ImageIcon className="mr-2 h-4 w-4" />
+                  Ver imagen
+                </Button>
               </div>
             </Card>
           );

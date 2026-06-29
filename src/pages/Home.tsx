@@ -37,7 +37,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-import { Settings, RefreshCw } from 'lucide-react';
 import {
   Cake,
   Coffee,
@@ -53,6 +52,8 @@ import {
   Trophy,
   Timer,
   ImageIcon,
+  Settings,
+  RefreshCw,
 } from 'lucide-react';
 
 let pedidoListoAudio: HTMLAudioElement | null = null;
@@ -114,6 +115,8 @@ type ItemRealtime = {
   tipo: string | null;
 };
 
+type BlockReasonCode = 'TIME_LOCK' | 'RATING_LOCK';
+
 const getHorarioHoy = (horarioArr: string[]): string => {
   const dayIndex = new Date().getDay();
   const todayIndex = (dayIndex + 6) % 7;
@@ -143,8 +146,6 @@ const isWithinHorario = (horarioArr: string[]): boolean => {
   return nowMin >= toMinutes(start) && nowMin <= toMinutes(end);
 };
 
-type BlockReasonCode = 'TIME_LOCK' | 'RATING_LOCK';
-
 const playReadySound = () => {
   if (!pedidoListoAudio || !audioUnlocked) {
     console.warn('[AUDIO] intento de reproducción sin desbloqueo');
@@ -164,7 +165,6 @@ const unlockAudio = () => {
   pedidoListoAudio.volume = 0.8;
   pedidoListoAudio.preload = 'auto';
 
-  // 🔕 EVITA QUE APAREZCA EN EL REPRODUCTOR DEL SISTEMA
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = null;
     navigator.mediaSession.setActionHandler('play', null);
@@ -190,8 +190,8 @@ const unlockAudio = () => {
 };
 
 function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
@@ -201,12 +201,10 @@ function urlBase64ToUint8Array(base64String: string) {
 async function ensurePushSubscription(userId: string) {
   try {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-
     if (Notification.permission === 'denied') return;
 
     let permission: NotificationPermission = Notification.permission;
 
-    // ⚠️ SOLO tras gesto del usuario
     if (permission === 'default') {
       permission = await Notification.requestPermission();
     }
@@ -220,8 +218,6 @@ async function ensurePushSubscription(userId: string) {
     }
 
     const reg = await navigator.serviceWorker.ready;
-
-    // 🔁 Verificar si ya existe suscripción
     let subscription = await reg.pushManager.getSubscription();
 
     if (!subscription) {
@@ -247,7 +243,6 @@ async function ensurePushSubscription(userId: string) {
 
     console.log('[PUSH] suscripción asegurada');
   } catch (err) {
-    // ❗ NO romper pedido por push
     console.warn('[PUSH] error silencioso', err);
   }
 }
@@ -259,11 +254,13 @@ const getVersionedUrl = (url?: string | null, version?: string | null) => {
   )}`;
 };
 
-
 const MENU_IMAGE_CACHE_PREFIX = 'menu-image-cache:v1:';
 const MENU_IMAGE_PLACEHOLDER = 'https://placehold.co/600x400/002E45/FF6900?text=Café';
 
+const APP_IMAGE_CACHE_PREFIX = 'app-image-cache:v2:';
+
 const getMenuImageCacheKey = (url: string) => `${MENU_IMAGE_CACHE_PREFIX}${url}`;
+const getAppImageCacheKey = (url: string) => `${APP_IMAGE_CACHE_PREFIX}${url}`;
 
 const readBlobAsDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -281,7 +278,7 @@ const getCachedImageUrl = async (url: string): Promise<string> => {
     const cached = localStorage.getItem(key);
     if (cached) return cached;
 
-    const response = await fetch(url, { cache: 'force-cache' });
+    const response = await fetch(url, { cache: 'reload' });
     if (!response.ok) throw new Error(`No se pudo cargar la imagen (${response.status})`);
 
     const blob = await response.blob();
@@ -300,10 +297,38 @@ const getCachedImageUrl = async (url: string): Promise<string> => {
   }
 };
 
+const getCachedAppImageUrl = async (url: string): Promise<string> => {
+  if (!url) return '';
+
+  try {
+    const key = getAppImageCacheKey(url);
+    const cached = localStorage.getItem(key);
+    if (cached) return cached;
+
+    const response = await fetch(url, { cache: 'reload' });
+    if (!response.ok) throw new Error(`No se pudo cargar imagen (${response.status})`);
+
+    const blob = await response.blob();
+    const dataUrl = await readBlobAsDataUrl(blob);
+
+    try {
+      localStorage.setItem(key, dataUrl);
+    } catch (storageError) {
+      console.warn('[APP IMAGE CACHE] localStorage lleno o no disponible', storageError);
+    }
+
+    return dataUrl;
+  } catch (error) {
+    console.warn('[APP IMAGE CACHE] usando URL directa', error);
+    return url;
+  }
+};
+
 export default function Home() {
   const { user, logout, refreshUser } = useAuth();
 
   const [minH, setMinH] = useState<string>('100svh');
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   const [items, setItems] = useState<Item[]>([]);
   const [order, setOrder] = useState<OrderItem[]>([]);
@@ -312,6 +337,9 @@ export default function Home() {
   const [pedidosBloqueoGlobal, setPedidosBloqueoGlobal] = useState<Pedido[]>([]);
   const [blockCafeteriaName, setBlockCafeteriaName] = useState<string | null>(null);
   const [config, setConfig] = useState<Config | null>(null);
+
+  const [cachedBgSrc, setCachedBgSrc] = useState('');
+  const [cachedLogoSrc, setCachedLogoSrc] = useState('');
 
   const [showBirthdayModal, setShowBirthdayModal] = useState(false);
 
@@ -324,7 +352,6 @@ export default function Home() {
   const [loadingRanking, setLoadingRanking] = useState(true);
 
   const [blockReason, setBlockReason] = useState<BlockReasonCode | null>(null);
-  
   const [countdownDisplay, setCountdownDisplay] = useState<string | null>(null);
 
   const cafeteriaIds = useMemo(() => user?.cafeteria_ids ?? [], [user]);
@@ -347,6 +374,42 @@ export default function Home() {
     cafeteriaName: null,
   });
 
+  const backgroundRawUrl = useMemo(() => {
+    return isMobileViewport
+      ? config?.movil_bg || config?.hero_bg_url || ''
+      : config?.hero_bg_url || '';
+  }, [isMobileViewport, config?.movil_bg, config?.hero_bg_url]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAppImages = async () => {
+      const version = config?.updated_at || '';
+      const bgVersionedUrl = getVersionedUrl(backgroundRawUrl, version);
+      const logoVersionedUrl = getVersionedUrl(config?.logo_url, version);
+
+      if (bgVersionedUrl) {
+        const bg = await getCachedAppImageUrl(bgVersionedUrl);
+        if (!cancelled) setCachedBgSrc(bg);
+      } else {
+        setCachedBgSrc('');
+      }
+
+      if (logoVersionedUrl) {
+        const logo = await getCachedAppImageUrl(logoVersionedUrl);
+        if (!cancelled) setCachedLogoSrc(logo);
+      } else {
+        setCachedLogoSrc('');
+      }
+    };
+
+    loadAppImages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [backgroundRawUrl, config?.logo_url, config?.updated_at]);
+
   useEffect(() => {
     const handler = () => unlockAudio();
     window.addEventListener('click', handler, { once: true });
@@ -361,16 +424,12 @@ export default function Home() {
     if (!audioUnlocked) return;
 
     const pedidoListoPendiente = pedidosActivos.find(
-      (p) =>
-        p.estado === 'listo' &&
-        !notifiedRef.current.has(p.id)
+      (p) => p.estado === 'listo' && !notifiedRef.current.has(p.id)
     );
 
     if (pedidoListoPendiente) {
       notifiedRef.current.add(pedidoListoPendiente.id);
       playReadySound();
-
-      console.log('[AUDIO] reproducido post-desbloqueo');
 
       if (Notification.permission === 'granted') {
         new Notification('☕ Pedido listo', {
@@ -396,13 +455,22 @@ export default function Home() {
   }, [user, cafeteriaIds]);
 
   useEffect(() => {
-    const setVh = () => {
+    const setViewportData = () => {
       const h = window.visualViewport?.height ?? window.innerHeight;
+      const w = window.visualViewport?.width ?? window.innerWidth;
       setMinH(`${h}px`);
+      setIsMobileViewport(w < 768);
     };
-    setVh();
-    window.visualViewport?.addEventListener('resize', setVh);
-    return () => window.visualViewport?.removeEventListener('resize', setVh);
+
+    setViewportData();
+
+    window.visualViewport?.addEventListener('resize', setViewportData);
+    window.addEventListener('resize', setViewportData);
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', setViewportData);
+      window.removeEventListener('resize', setViewportData);
+    };
   }, []);
 
   const checkBirthday = (birthDate: string) => {
@@ -419,13 +487,6 @@ export default function Home() {
 
       if (isSameMonth && isSameDay) {
         setShowBirthdayModal(true);
-        let age = today.getFullYear() - birth.getFullYear();
-        if (
-          today.getMonth() < birth.getMonth() ||
-          (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())
-        ) {
-          age--;
-        }
         localStorage.setItem('birthdayModalShown', todayKey);
       }
     } catch (e) {
@@ -468,16 +529,19 @@ export default function Home() {
       setCafeterias([]);
       return;
     }
+
     const { data, error } = await supabase
       .from('configuracion')
       .select('id, nombre_local')
       .in('id', cafeteriaIds)
       .order('nombre_local');
+
     if (error) {
       console.error('Error fetching cafeterias:', error.message);
       setCafeterias([]);
       return;
     }
+
     setCafeterias(data ?? []);
   };
 
@@ -489,11 +553,13 @@ export default function Home() {
   const fetchMenu = useCallback(async () => {
     if (!cafeteriaActivaId) return;
     setLoadingItems(true);
+
     try {
       const { data, error } = await supabase
         .from('items')
         .select('*')
         .eq('cafeteria_id', cafeteriaActivaId);
+
       if (error) throw error;
       if (data) setItems(data);
     } catch (err: any) {
@@ -561,7 +627,6 @@ export default function Home() {
     notifiedRef.current.clear();
   }, [cafeteriaActivaId]);
 
-  
   const fetchUserRanking = useCallback(async () => {
     if (!user) return;
     setLoadingRanking(true);
@@ -584,7 +649,6 @@ export default function Home() {
   useEffect(() => {
     if (!cafeteriaActivaId) return;
 
-    // Carga inicial de TODO (incluyendo ranking)
     const loadAll = async () => {
       await Promise.all([
         fetchConfig(),
@@ -606,7 +670,6 @@ export default function Home() {
       return;
     }
 
-    // Limpieza previa
     notifiedRef.current.clear();
 
     if (realtimeChannelRef.current) {
@@ -615,10 +678,6 @@ export default function Home() {
 
     const channel = supabase
       .channel(`pedidos-pwa-${cafeteriaActivaId}-${user.id}`)
-
-      // ─────────────────────────────────────────────
-      // PEDIDOS PWA (DETECCIÓN REAL DE CAMBIO A LISTO)
-      // ─────────────────────────────────────────────
       .on(
         'postgres_changes',
         {
@@ -634,25 +693,15 @@ export default function Home() {
           const estadoPrevio = pedidosEstadoRef.current[nuevo.id];
           const estadoNuevo = nuevo.estado;
 
-          console.log(
-            '[REALTIME]',
-            nuevo.id,
-            estadoPrevio,
-            '→',
-            estadoNuevo
-          );
-
-          // 🔔 DETECTAR TRANSICIÓN REAL A "LISTO"
           if (estadoPrevio !== 'listo' && estadoNuevo === 'listo') {
             if (!notifiedRef.current.has(nuevo.id)) {
               notifiedRef.current.add(nuevo.id);
-
               playReadySound();
 
               if (Notification.permission === 'granted') {
                 new Notification('☕ Pedido listo', {
                   body: 'Tu pedido ya puede ser retirado',
-                  icon: '/icon-192.png',                  
+                  icon: '/icon-192.png',
                 });
               }
 
@@ -663,10 +712,8 @@ export default function Home() {
             }
           }
 
-          // 🔄 ACTUALIZAR CACHE LOCAL DE ESTADOS
           pedidosEstadoRef.current[nuevo.id] = estadoNuevo;
 
-          // 🔄 ACTUALIZAR UI SIN FETCH (SILENCIOSO)
           setPedidosActivos((prev) =>
             prev.map((p) =>
               p.id === nuevo.id
@@ -679,7 +726,6 @@ export default function Home() {
             )
           );
 
-          // 🔄 MOVER A HISTORIAL SI SE ENTREGA
           if (estadoNuevo === 'entregado') {
             setPedidosActivos((prev) => prev.filter((p) => p.id !== nuevo.id));
             setPedidosHistorial((prev) => [
@@ -697,10 +743,6 @@ export default function Home() {
           }
         }
       )
-
-      // ─────────────────────────────────────────────
-      // ITEMS
-      // ─────────────────────────────────────────────
       .on(
         'postgres_changes',
         {
@@ -727,19 +769,8 @@ export default function Home() {
                 : item
             )
           );
-
-          console.log(
-            '[REALTIME ITEM]',
-            nuevo.id,
-            'disponible →',
-            nuevo.disponible
-          );
         }
       )
-
-      // ─────────────────────────────────────────────
-      // CONFIGURACIÓN
-      // ─────────────────────────────────────────────
       .on(
         'postgres_changes',
         {
@@ -750,10 +781,6 @@ export default function Home() {
         },
         () => fetchConfig()
       )
-
-      // ─────────────────────────────────────────────
-      // SUBSCRIBE
-      // ─────────────────────────────────────────────
       .subscribe((status) => {
         console.log('[REALTIME STATUS]', status);
       });
@@ -766,14 +793,14 @@ export default function Home() {
         realtimeChannelRef.current = null;
       }
     };
-  }, [user?.id, cafeteriaActivaId, fetchMenu, fetchConfig]);
+  }, [user?.id, cafeteriaActivaId, fetchConfig]);
 
   useEffect(() => {
     if (!user?.id || !cafeteriaActivaId) return;
 
     const interval = setInterval(() => {
-      fetchPedidos(true); // 👈 SILENCIOSO (sin loading)
-    }, 5000); // cada 5 segundos
+      fetchPedidos(true);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [user?.id, cafeteriaActivaId, fetchPedidos]);
@@ -785,7 +812,9 @@ export default function Home() {
     };
 
     const pedidosParaBloqueo =
-      cafeteriaIds.length > 1 ? pedidosBloqueoGlobal : pedidosHistorial.concat(pedidosActivos);
+      cafeteriaIds.length > 1
+        ? pedidosBloqueoGlobal
+        : pedidosHistorial.concat(pedidosActivos);
 
     const pendienteCalificacion = pedidosParaBloqueo.find(
       (p) => p.estado === 'entregado' && !p.calificado
@@ -806,8 +835,8 @@ export default function Home() {
       return;
     }
 
-    const ultimoPedido = [...pedidosParaBloqueo]
-      .sort(
+    const ultimoPedido =
+      [...pedidosParaBloqueo].sort(
         (a, b) =>
           new Date(b.created_at).getTime() -
           new Date(a.created_at).getTime()
@@ -1050,20 +1079,18 @@ export default function Home() {
 
   return (
     <div className="unemi text-white relative pb-24" style={{ minHeight: minH }}>
-      <div className="absolute inset-0 -z-10">
-        <div
-          className="h-full w-full bg-no-repeat bg-center bg-cover"
-          style={{
-            backgroundImage: `url(${getVersionedUrl(
-              window.innerWidth < 768
-                ? config?.movil_bg || config?.hero_bg_url
-                : config?.hero_bg_url,
-              config?.updated_at
-            )})`,
-            backgroundAttachment: 'fixed',
-          }}
-        />
-        <div className="absolute inset-0 bg-[hsl(200_100%_13.5%/_0.88)]" />
+      <div className="fixed inset-0 -z-20 bg-[hsl(200_100%_13.5%)] overflow-hidden">
+        {cachedBgSrc ? (
+          <img
+            src={cachedBgSrc}
+            alt=""
+            aria-hidden="true"
+            className="fixed inset-0 h-full w-full object-contain pointer-events-none select-none"
+            draggable={false}
+          />
+        ) : null}
+
+        <div className="fixed inset-0 bg-[hsl(200_100%_13.5%/_0.88)]" />
       </div>
 
       <header className="p-4 flex justify-between items-start">
@@ -1100,7 +1127,7 @@ export default function Home() {
               value={cafeteriaActivaId ?? ''}
               onValueChange={(value) => setCafeteriaActivaId(value)}
             >
-              <SelectTrigger className="w-full bg-white text-black border border-gray-300">
+              <SelectTrigger className="w-full bg-white text-black border border-gray-300 mt-3">
                 <SelectValue placeholder="Selecciona cafetería" />
               </SelectTrigger>
               <SelectContent className="bg-white text-neutral-900 border border-gray-200">
@@ -1120,7 +1147,7 @@ export default function Home() {
 
         <div className="flex items-center gap-2">
           <img
-            src={getVersionedUrl(config?.logo_url, config?.updated_at) || undefined}
+            src={cachedLogoSrc || undefined}
             alt="Logo"
             className="h-20 w-20 rounded-full border-2 border-unemi-orange bg-white object-contain"
           />
@@ -1202,11 +1229,9 @@ export default function Home() {
             {cafeterias.length > 1 && !cafeteriaActivaId ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <Coffee className="h-16 w-16 text-white/40 mb-4" />
-            
                 <h3 className="text-2xl font-bold text-white mb-2">
                   Selecciona una cafetería
                 </h3>
-            
                 <p className="text-white/70 max-w-md">
                   Debes seleccionar una cafetería para poder visualizar los productos disponibles
                   y realizar pedidos.
@@ -1377,10 +1402,6 @@ export default function Home() {
     </div>
   );
 }
-
-// ──────────────────────────────────────────────────────────────
-// Componentes auxiliares (sin cambios significativos)
-// ──────────────────────────────────────────────────────────────
 
 function OrderLockWidget({
   loading,
@@ -1769,26 +1790,32 @@ function ProductGrid({
 }
 
 function PedidosActivosWidget({ loading, activos }: { loading: boolean; activos: Pedido[] }) {
-  
   if (!loading && activos.length === 0) return null;
 
   const getStatusInfo = (estado: string) => {
     if (estado === 'pendiente')
-      return { text: 'Pedido Recibido', icon: <Loader2 className="h-4 w-4 animate-spin text-yellow-400" /> };
+      return {
+        text: 'Pedido Recibido',
+        icon: <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />,
+      };
     if (estado === 'preparando')
-      return { text: 'Preparando ☕', icon: <Coffee className="h-4 w-4 text-blue-400" /> };
+      return {
+        text: 'Preparando ☕',
+        icon: <Coffee className="h-4 w-4 text-blue-400" />,
+      };
     if (estado === 'listo')
-      return { text: '¡Listo para retirar! 🍶', icon: <ShoppingBag className="h-4 w-4 text-green-400" /> };
+      return {
+        text: '¡Listo para retirar! 🍶',
+        icon: <ShoppingBag className="h-4 w-4 text-green-400" />,
+      };
     return { text: 'Desconocido', icon: <></> };
   };
 
   return (
     <div className="space-y-4 mt-6 mb-8">
-      
-
       {activos.map((pedido) => {
         const status = getStatusInfo(pedido.estado);
-        <h3 className="font-aventura text-xl font-bold text-white">Tu Pedido en Curso</h3>
+
         return (
           <Card key={pedido.id} className="dashboard-card border-l-4 border-unemi-orange">
             <CardHeader>
@@ -2102,11 +2129,9 @@ function RatingDialog({
                     transition-all
                     disabled:opacity-50
                   "
-
                   onClick={handleSubmit}
                   disabled={isSubmitting || rating === 0}
                 >
-
                   {isSubmitting
                     ? 'Enviando...'
                     : `Enviar Calificación (${rating} Estrellas)`}
@@ -2123,7 +2148,7 @@ function RatingDialog({
 function BirthdayModal({
   isOpen,
   onClose,
-  name, 
+  name,
 }: {
   isOpen: boolean;
   onClose: () => void;

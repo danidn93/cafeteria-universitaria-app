@@ -2176,7 +2176,7 @@ function BirthdayModal({
 
         <DialogFooter className="p-4 bg-gray-50">
           <Button variant="secondary" className="w-full" onClick={onClose}>
-            ¡Muchas Gracias!
+            ¡Felicidades!
           </Button>
         </DialogFooter>
       </DialogContent>

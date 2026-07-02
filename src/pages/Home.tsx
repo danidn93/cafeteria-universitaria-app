@@ -51,7 +51,6 @@ import {
   KeyRound,
   Trophy,
   Timer,
-  ImageIcon,
   Settings,
   RefreshCw,
 } from 'lucide-react';
@@ -254,10 +253,10 @@ const getVersionedUrl = (url?: string | null, version?: string | null) => {
   )}`;
 };
 
-const MENU_IMAGE_CACHE_PREFIX = 'menu-image-cache:v1:';
+const MENU_IMAGE_CACHE_PREFIX = 'menu-image-cache:v2:';
 const MENU_IMAGE_PLACEHOLDER = 'https://placehold.co/600x400/002E45/FF6900?text=Café';
 
-const APP_IMAGE_CACHE_PREFIX = 'app-image-cache:v2:';
+const APP_IMAGE_CACHE_PREFIX = 'app-image-cache:v3:';
 
 const getMenuImageCacheKey = (url: string) => `${MENU_IMAGE_CACHE_PREFIX}${url}`;
 const getAppImageCacheKey = (url: string) => `${APP_IMAGE_CACHE_PREFIX}${url}`;
@@ -270,14 +269,36 @@ const readBlobAsDataUrl = (blob: Blob) =>
     reader.readAsDataURL(blob);
   });
 
+const getImageBaseUrl = (url: string) => url.split('?')[0];
+
+const cleanOldImageCache = (prefix: string, currentKey: string, currentUrl: string) => {
+  try {
+    const currentBaseUrl = getImageBaseUrl(currentUrl);
+
+    Object.keys(localStorage).forEach((key) => {
+      if (!key.startsWith(prefix)) return;
+      if (key === currentKey) return;
+
+      const storedUrl = key.replace(prefix, '');
+      const storedBaseUrl = getImageBaseUrl(storedUrl);
+
+      if (storedBaseUrl === currentBaseUrl) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch (error) {
+    console.warn('[IMAGE CACHE] no se pudo limpiar caché anterior', error);
+  }
+};
+
 const getCachedImageUrl = async (url: string): Promise<string> => {
   if (!url) return MENU_IMAGE_PLACEHOLDER;
 
-  try {
-    const key = getMenuImageCacheKey(url);
-    const cached = localStorage.getItem(key);
-    if (cached) return cached;
+  const key = getMenuImageCacheKey(url);
+  const cached = localStorage.getItem(key);
+  if (cached) return cached;
 
+  try {
     const response = await fetch(url, { cache: 'reload' });
     if (!response.ok) throw new Error(`No se pudo cargar la imagen (${response.status})`);
 
@@ -285,6 +306,7 @@ const getCachedImageUrl = async (url: string): Promise<string> => {
     const dataUrl = await readBlobAsDataUrl(blob);
 
     try {
+      cleanOldImageCache(MENU_IMAGE_CACHE_PREFIX, key, url);
       localStorage.setItem(key, dataUrl);
     } catch (storageError) {
       console.warn('[MENU IMAGE CACHE] localStorage lleno o no disponible', storageError);
@@ -300,11 +322,11 @@ const getCachedImageUrl = async (url: string): Promise<string> => {
 const getCachedAppImageUrl = async (url: string): Promise<string> => {
   if (!url) return '';
 
-  try {
-    const key = getAppImageCacheKey(url);
-    const cached = localStorage.getItem(key);
-    if (cached) return cached;
+  const key = getAppImageCacheKey(url);
+  const cached = localStorage.getItem(key);
+  if (cached) return cached;
 
+  try {
     const response = await fetch(url, { cache: 'reload' });
     if (!response.ok) throw new Error(`No se pudo cargar imagen (${response.status})`);
 
@@ -312,6 +334,7 @@ const getCachedAppImageUrl = async (url: string): Promise<string> => {
     const dataUrl = await readBlobAsDataUrl(blob);
 
     try {
+      cleanOldImageCache(APP_IMAGE_CACHE_PREFIX, key, url);
       localStorage.setItem(key, dataUrl);
     } catch (storageError) {
       console.warn('[APP IMAGE CACHE] localStorage lleno o no disponible', storageError);
@@ -1678,114 +1701,107 @@ function ProductGrid({
   disabled?: boolean;
   imageVersion?: string | null;
 }) {
-  const [previewItem, setPreviewItem] = useState<Item | null>(null);
-  const [previewSrc, setPreviewSrc] = useState<string>('');
-  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [imageMap, setImageMap] = useState<Record<string, string>>({});
 
-  const openPreview = async (item: Item) => {
-    setPreviewItem(item);
-    setPreviewSrc('');
-    setLoadingPreview(true);
+  useEffect(() => {
+    let cancelled = false;
 
-    const finalUrl = getVersionedUrl(item.image_url || MENU_IMAGE_PLACEHOLDER, imageVersion ?? item.id);
-    const cachedUrl = await getCachedImageUrl(finalUrl);
+    const loadProductImages = async () => {
+      const entries = await Promise.all(
+        items.map(async (item) => {
+          const finalUrl = getVersionedUrl(
+            item.image_url || MENU_IMAGE_PLACEHOLDER,
+            imageVersion ?? item.id
+          );
 
-    setPreviewSrc(cachedUrl);
-    setLoadingPreview(false);
-  };
+          const cachedUrl = await getCachedImageUrl(finalUrl || MENU_IMAGE_PLACEHOLDER);
+          return [item.id, cachedUrl] as const;
+        })
+      );
+
+      if (!cancelled) {
+        setImageMap(Object.fromEntries(entries));
+      }
+    };
+
+    if (items.length === 0) {
+      setImageMap({});
+      return;
+    }
+
+    loadProductImages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items, imageVersion]);
 
   return (
-    <>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {items.map((item) => {
-          const itemInOrder = order.find((i) => i.id === item.id);
-          const quantity = itemInOrder?.quantity || 0;
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      {items.map((item) => {
+        const itemInOrder = order.find((i) => i.id === item.id);
+        const quantity = itemInOrder?.quantity || 0;
+        const imageSrc = imageMap[item.id];
 
-          return (
-            <Card
-              key={item.id}
-              className={`dashboard-card flex flex-col justify-between ${
-                disabled ? 'opacity-40 grayscale' : ''
-              }`}
-            >
-              <CardContent className="p-4 flex-grow">
-                <CardTitle className="font-aventura text-lg">{item.nombre}</CardTitle>
-                <CardDescription className="text-sm mt-1 opacity-80">
-                  {item.description}
-                </CardDescription>
-              </CardContent>
-
-              <div className="p-4 pt-0 space-y-2">
-                {quantity === 0 ? (
-                  <Button
-                    className="w-full"
-                    variant="secondary"
-                    onClick={() => onUpdateQuantity(item, 'inc')}
-                    disabled={disabled}
-                  >
-                    Seleccionar
-                  </Button>
-                ) : (
-                  <div className="flex items-center gap-2 justify-center">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-10 w-10"
-                      onClick={() => onUpdateQuantity(item, 'dec')}
-                    >
-                      <MinusCircle className="h-5 w-5" />
-                    </Button>
-                    <span className="w-10 text-center text-xl font-bold">{quantity}</span>
-                  </div>
-                )}
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full bg-white/10 text-white border-white/30 hover:bg-white/20 hover:text-white"
-                  onClick={() => openPreview(item)}
-                >
-                  <ImageIcon className="mr-2 h-4 w-4" />
-                  Ver imagen
-                </Button>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      <Dialog open={!!previewItem} onOpenChange={(open) => !open && setPreviewItem(null)}>
-        <DialogContent className="bg-white text-neutral-900 max-w-3xl p-0 overflow-hidden">
-          <DialogHeader className="p-4 pb-2">
-            <DialogTitle>{previewItem?.nombre}</DialogTitle>
-            {previewItem?.description && (
-              <DialogDescription>{previewItem.description}</DialogDescription>
-            )}
-          </DialogHeader>
-
-          <div className="px-4 pb-4">
-            <div className="min-h-[220px] rounded-lg bg-neutral-100 flex items-center justify-center overflow-hidden">
-              {loadingPreview ? (
-                <div className="py-16 text-center text-neutral-500">
-                  <Loader2 className="h-8 w-8 mx-auto animate-spin mb-2" />
-                  Cargando imagen...
-                </div>
-              ) : previewSrc ? (
+        return (
+          <Card
+            key={item.id}
+            className={`dashboard-card flex flex-col justify-between overflow-hidden ${
+              disabled ? 'opacity-40 grayscale' : ''
+            }`}
+          >
+            <div className="w-full h-36 bg-white/10 flex items-center justify-center overflow-hidden">
+              {imageSrc ? (
                 <img
-                  src={previewSrc}
-                  alt={previewItem?.nombre ?? 'Imagen del producto'}
-                  className="w-full max-h-[70vh] object-contain"
+                  src={imageSrc}
+                  alt={item.nombre}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  draggable={false}
                 />
               ) : (
-                <div className="py-16 text-center text-neutral-500">
-                  Imagen no disponible
+                <div className="flex flex-col items-center justify-center text-white/60 text-xs">
+                  <Loader2 className="h-5 w-5 animate-spin mb-2" />
+                  Cargando imagen...
                 </div>
               )}
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+
+            <CardContent className="p-4 flex-grow">
+              <CardTitle className="font-aventura text-lg">{item.nombre}</CardTitle>
+              <CardDescription className="text-sm mt-1 opacity-80">
+                {item.description}
+              </CardDescription>
+            </CardContent>
+
+            <div className="p-4 pt-0">
+              {quantity === 0 ? (
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  onClick={() => onUpdateQuantity(item, 'inc')}
+                  disabled={disabled}
+                >
+                  Seleccionar
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2 justify-center">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10"
+                    onClick={() => onUpdateQuantity(item, 'dec')}
+                  >
+                    <MinusCircle className="h-5 w-5" />
+                  </Button>
+                  <span className="w-10 text-center text-xl font-bold">{quantity}</span>
+                </div>
+              )}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
   );
 }
 

@@ -62,7 +62,6 @@ interface Item {
   id: string;
   nombre: string;
   disponible: boolean;
-  image_url: string | null;
   description: string | null;
   tipo: string | null;
 }
@@ -109,12 +108,17 @@ type ItemRealtime = {
   id: string;
   disponible: boolean;
   nombre: string;
-  image_url: string | null;
   description: string | null;
   tipo: string | null;
 };
 
 type BlockReasonCode = 'TIME_LOCK' | 'RATING_LOCK';
+
+const LOCAL_ITEM_IMAGE_FALLBACK = '/assets/items/default.webp';
+
+const getLocalItemImage = (itemId: string) => {
+  return `/assets/items/item_${itemId}.svg`;
+};
 
 const getHorarioHoy = (horarioArr: string[]): string => {
   const dayIndex = new Date().getDay();
@@ -253,12 +257,8 @@ const getVersionedUrl = (url?: string | null, version?: string | null) => {
   )}`;
 };
 
-const MENU_IMAGE_CACHE_PREFIX = 'menu-image-cache:v2:';
-const MENU_IMAGE_PLACEHOLDER = 'https://placehold.co/600x400/002E45/FF6900?text=Café';
-
 const APP_IMAGE_CACHE_PREFIX = 'app-image-cache:v3:';
 
-const getMenuImageCacheKey = (url: string) => `${MENU_IMAGE_CACHE_PREFIX}${url}`;
 const getAppImageCacheKey = (url: string) => `${APP_IMAGE_CACHE_PREFIX}${url}`;
 
 const readBlobAsDataUrl = (blob: Blob) =>
@@ -288,34 +288,6 @@ const cleanOldImageCache = (prefix: string, currentKey: string, currentUrl: stri
     });
   } catch (error) {
     console.warn('[IMAGE CACHE] no se pudo limpiar caché anterior', error);
-  }
-};
-
-const getCachedImageUrl = async (url: string): Promise<string> => {
-  if (!url) return MENU_IMAGE_PLACEHOLDER;
-
-  const key = getMenuImageCacheKey(url);
-  const cached = localStorage.getItem(key);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(url, { cache: 'reload' });
-    if (!response.ok) throw new Error(`No se pudo cargar la imagen (${response.status})`);
-
-    const blob = await response.blob();
-    const dataUrl = await readBlobAsDataUrl(blob);
-
-    try {
-      cleanOldImageCache(MENU_IMAGE_CACHE_PREFIX, key, url);
-      localStorage.setItem(key, dataUrl);
-    } catch (storageError) {
-      console.warn('[MENU IMAGE CACHE] localStorage lleno o no disponible', storageError);
-    }
-
-    return dataUrl;
-  } catch (error) {
-    console.warn('[MENU IMAGE CACHE] usando URL directa/placeholder', error);
-    return url || MENU_IMAGE_PLACEHOLDER;
   }
 };
 
@@ -437,6 +409,7 @@ export default function Home() {
     const handler = () => unlockAudio();
     window.addEventListener('click', handler, { once: true });
     window.addEventListener('touchstart', handler, { once: true });
+
     return () => {
       window.removeEventListener('click', handler);
       window.removeEventListener('touchstart', handler);
@@ -470,6 +443,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
+
     if (cafeteriaIds.length === 1) {
       setCafeteriaActivaId(cafeteriaIds[0]);
     } else {
@@ -499,10 +473,12 @@ export default function Home() {
   const checkBirthday = (birthDate: string) => {
     try {
       if (!birthDate) return;
+
       const [year, month, day] = birthDate.split('-').map(Number);
       const birth = new Date(year, month - 1, day);
       const today = new Date();
       const todayKey = today.toDateString();
+
       if (localStorage.getItem('birthdayModalShown') === todayKey) return;
 
       const isSameMonth = today.getMonth() === birth.getMonth();
@@ -519,21 +495,26 @@ export default function Home() {
 
   useEffect(() => {
     if (!user?.fecha_nacimiento) return;
+
     checkBirthday(user.fecha_nacimiento);
+
     const interval = setInterval(() => {
       if (user?.fecha_nacimiento) checkBirthday(user.fecha_nacimiento);
     }, 60000);
+
     return () => clearInterval(interval);
   }, [user]);
 
   const fetchConfig = useCallback(async () => {
     if (!cafeteriaActivaId) return;
+
     try {
       const { data, error } = await supabase
         .from('configuracion')
         .select('*')
         .eq('id', cafeteriaActivaId)
         .single();
+
       if (error) throw error;
       if (data) setConfig(data);
     } catch (err: any) {
@@ -575,12 +556,13 @@ export default function Home() {
 
   const fetchMenu = useCallback(async () => {
     if (!cafeteriaActivaId) return;
+
     setLoadingItems(true);
 
     try {
       const { data, error } = await supabase
         .from('items')
-        .select('*')
+        .select('id, nombre, disponible, description, tipo')
         .eq('cafeteria_id', cafeteriaActivaId);
 
       if (error) throw error;
@@ -631,8 +613,7 @@ export default function Home() {
           .filter((p) => p.estado === 'entregado')
           .sort(
             (a, b) =>
-              new Date(b.updated_at).getTime() -
-              new Date(a.updated_at).getTime()
+              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
           );
 
         setPedidosActivos(activos);
@@ -652,6 +633,7 @@ export default function Home() {
 
   const fetchUserRanking = useCallback(async () => {
     if (!user) return;
+
     setLoadingRanking(true);
 
     try {
@@ -785,7 +767,6 @@ export default function Home() {
                     ...item,
                     disponible: nuevo.disponible,
                     nombre: nuevo.nombre,
-                    image_url: nuevo.image_url,
                     description: nuevo.description,
                     tipo: nuevo.tipo,
                   }
@@ -861,8 +842,7 @@ export default function Home() {
     const ultimoPedido =
       [...pedidosParaBloqueo].sort(
         (a, b) =>
-          new Date(b.created_at).getTime() -
-          new Date(a.created_at).getTime()
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )[0] ?? null;
 
     if (!ultimoPedido) {
@@ -871,6 +851,7 @@ export default function Home() {
         expiresAt: null,
         cafeteriaName: null,
       };
+
       setBlockReason(null);
       setBlockCafeteriaName(null);
       setCountdownDisplay(null);
@@ -899,6 +880,7 @@ export default function Home() {
       expiresAt: null,
       cafeteriaName: null,
     };
+
     setBlockReason(null);
     setBlockCafeteriaName(null);
     setCountdownDisplay(null);
@@ -951,7 +933,9 @@ export default function Home() {
     };
 
     updateCountdown();
+
     const id = setInterval(updateCountdown, 10000);
+
     return () => clearInterval(id);
   }, [blockReason]);
 
@@ -997,7 +981,7 @@ export default function Home() {
       if (isOrderBlocked) {
         toast({
           title: 'Pedido bloqueado',
-          description: finalBlockReason,
+          description: finalBlockReason ?? 'No puedes realizar pedidos por el momento.',
           variant: 'destructive',
         });
         return;
@@ -1035,7 +1019,7 @@ export default function Home() {
     if (isOrderBlocked) {
       toast({
         title: 'Pedido bloqueado',
-        description: finalBlockReason,
+        description: finalBlockReason ?? 'No puedes realizar pedidos por el momento.',
         variant: 'destructive',
       });
       return;
@@ -1044,6 +1028,7 @@ export default function Home() {
     if (!user || order.length === 0) return;
 
     await ensurePushSubscription(user.id);
+
     setIsSubmitting(true);
 
     try {
@@ -1075,11 +1060,13 @@ export default function Home() {
       if (itemsError) throw itemsError;
 
       toast({ title: '¡Pedido Confirmado!', description: 'Muchas Gracias.' });
+
       setOrder([]);
       setIsSheetOpen(false);
       fetchPedidos();
     } catch (error: any) {
       console.error('Error submitting order:', error);
+
       toast({
         title: 'Error al enviar el pedido',
         description: error.message,
@@ -1097,6 +1084,7 @@ export default function Home() {
       (item) => item.tipo !== 'cafe' && item.tipo !== 'snack' && item.disponible
     );
     const noDisponibles = items.filter((item) => !item.disponible);
+
     return { cafes, bebidas, snacks, noDisponibles };
   }, [items]);
 
@@ -1121,20 +1109,24 @@ export default function Home() {
           <h1 className="text-xl font-bold">
             Hola, {user && (user.name?.split(' ')[0] || 'Empleado')}
           </h1>
+
           <p className="text-white opacity-90">
             {config?.nombre_local || 'Cafetería Universitaria'}
           </p>
+
           <div className="mt-3 text-sm text-white opacity-70 flex items-center gap-4">
             <div className="flex items-center gap-1.5">
               <Clock className="h-4 w-4" />
               <span>{config ? getHorarioHoy(config.horario_arr) : '...'}</span>
             </div>
+
             <div className="flex items-center gap-1.5">
               <span
                 className={`h-2 w-2 rounded-full ${
                   cafeteriaOperativa ? 'bg-green-500' : 'bg-red-500'
                 }`}
-              ></span>
+              />
+
               <span>
                 {cafeteriaOperativa
                   ? 'Abierta'
@@ -1153,6 +1145,7 @@ export default function Home() {
               <SelectTrigger className="w-full bg-white text-black border border-gray-300 mt-3">
                 <SelectValue placeholder="Selecciona cafetería" />
               </SelectTrigger>
+
               <SelectContent className="bg-white text-neutral-900 border border-gray-200">
                 {cafeterias.map((c) => (
                   <SelectItem
@@ -1182,10 +1175,12 @@ export default function Home() {
               <Settings className="h-5 w-5" />
             </Button>
           </SheetTrigger>
+
           <SheetContent side="right" className="bg-white text-neutral-900">
             <SheetHeader>
               <SheetTitle>Opciones</SheetTitle>
             </SheetHeader>
+
             <div className="mt-6 space-y-3">
               <UpdateProfileDialog
                 user={user}
@@ -1194,12 +1189,15 @@ export default function Home() {
                   await refreshUser();
                 }}
               />
+
               <ChangePasswordDialog user={user} triggerAsRow />
+
               <SugerenciasDialog
                 user={user}
                 cafeteriaId={cafeteriaActivaId}
                 triggerAsRow
               />
+
               <SheetActionRow
                 icon={<LogOut className="h-4 w-4" />}
                 label="Cerrar sesión"
@@ -1220,7 +1218,7 @@ export default function Home() {
       <main className="container mx-auto px-4 py-6">
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as any)}
+          onValueChange={(v) => setActiveTab(v as 'menu' | 'pedidos')}
           className="w-full"
         >
           <TabsList className="grid w-full grid-cols-2 bg-white/10 border border-white/20">
@@ -1230,6 +1228,7 @@ export default function Home() {
             >
               Menú
             </TabsTrigger>
+
             <TabsTrigger
               value="pedidos"
               className="data-[state=active]:bg-unemi-orange data-[state=active]:text-white text-white"
@@ -1252,9 +1251,11 @@ export default function Home() {
             {cafeterias.length > 1 && !cafeteriaActivaId ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <Coffee className="h-16 w-16 text-white/40 mb-4" />
+
                 <h3 className="text-2xl font-bold text-white mb-2">
                   Selecciona una cafetería
                 </h3>
+
                 <p className="text-white/70 max-w-md">
                   Debes seleccionar una cafetería para poder visualizar los productos disponibles
                   y realizar pedidos.
@@ -1272,11 +1273,11 @@ export default function Home() {
                     <h2 className="font-aventura text-2xl font-bold mt-6 mb-4 text-orange-400 flex items-center gap-2">
                       <Coffee /> Cafés
                     </h2>
+
                     <ProductGrid
                       items={itemsPorCategoria.cafes}
                       onUpdateQuantity={handleUpdateQuantity}
                       order={order}
-                      imageVersion={config?.updated_at}
                     />
                   </>
                 )}
@@ -1286,11 +1287,11 @@ export default function Home() {
                     <h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-orange-400">
                       Nuestras Bebidas
                     </h2>
+
                     <ProductGrid
                       items={itemsPorCategoria.bebidas}
                       onUpdateQuantity={handleUpdateQuantity}
                       order={order}
-                      imageVersion={config?.updated_at}
                     />
                   </>
                 )}
@@ -1300,11 +1301,11 @@ export default function Home() {
                     <h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-orange-400">
                       Snacks
                     </h2>
+
                     <ProductGrid
                       items={itemsPorCategoria.snacks}
                       onUpdateQuantity={handleUpdateQuantity}
                       order={order}
-                      imageVersion={config?.updated_at}
                     />
                   </>
                 )}
@@ -1314,12 +1315,12 @@ export default function Home() {
                     <h2 className="font-aventura text-2xl font-bold mt-8 mb-4 text-white/70">
                       No Disponibles
                     </h2>
+
                     <ProductGrid
                       items={itemsPorCategoria.noDisponibles}
                       onUpdateQuantity={() => {}}
                       order={order}
-                      disabled={true}
-                      imageVersion={config?.updated_at}
+                      disabled
                     />
                   </>
                 )}
@@ -1369,6 +1370,7 @@ export default function Home() {
             <SheetTitle className="font-aventura text-2xl text-neutral-900">
               Tu Pedido
             </SheetTitle>
+
             <SheetDescription className="text-neutral-600">
               Confirma tu selección. Es cortesía de la casa.
             </SheetDescription>
@@ -1383,6 +1385,7 @@ export default function Home() {
                   <div>
                     <p className="font-semibold text-neutral-900">{item.nombre}</p>
                   </div>
+
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
@@ -1392,6 +1395,7 @@ export default function Home() {
                     >
                       <MinusCircle className="h-4 w-4" />
                     </Button>
+
                     <span className="w-8 text-center font-bold text-neutral-900">
                       {item.quantity}
                     </span>
@@ -1441,6 +1445,7 @@ function OrderLockWidget({
     <div className="relative bg-gradient-to-r from-red-600 to-orange-600 p-4 rounded-lg shadow-lg text-white my-6">
       <div className="flex items-center gap-4">
         <Timer className="h-10 w-10 text-white/80" />
+
         <div>
           <h4 className="font-aventura text-xl font-bold">Pedido Bloqueado</h4>
           <p className="text-sm opacity-90">{reason}</p>
@@ -1450,14 +1455,21 @@ function OrderLockWidget({
   );
 }
 
-function RankingWidget({ loading, ranking }: { loading: boolean; ranking: number | null }) {
-  if (loading)
+function RankingWidget({
+  loading,
+  ranking,
+}: {
+  loading: boolean;
+  ranking: number | null;
+}) {
+  if (loading) {
     return (
       <div className="text-center py-6">
         <Loader2 className="h-8 w-8 mx-auto animate-spin text-white/70" />
         <p className="text-white/70 mt-2">Cargando tu ranking...</p>
       </div>
     );
+  }
 
   if (!ranking) return null;
 
@@ -1465,17 +1477,20 @@ function RankingWidget({ loading, ranking }: { loading: boolean; ranking: number
     <div className="relative bg-gradient-to-r from-orange-500 to-yellow-400 p-4 rounded-lg shadow-lg text-white my-6 overflow-hidden">
       <div className="flex items-center gap-4">
         <Trophy className="h-10 w-10 text-yellow-200" />
+
         <div>
           <h4 className="font-aventura text-xl font-bold">¡Felicidades!</h4>
+
           <p className="text-sm opacity-90">
             Fuiste el <strong>Top #{ranking}</strong> en pedidos el mes pasado.
           </p>
         </div>
       </div>
+
       <div
         className="absolute -top-2 -right-2 bg-yellow-300 w-16 h-16 transform rotate-45"
         style={{ filter: 'opacity(0.5)' }}
-      ></div>
+      />
     </div>
   );
 }
@@ -1513,10 +1528,12 @@ function ChangePasswordDialog({
 
   const handleSubmit = async () => {
     if (!user) return;
+
     if (!newPassword || !confirmPassword) {
       toast({ title: 'Campos vacíos', variant: 'destructive' });
       return;
     }
+
     if (newPassword !== confirmPassword) {
       toast({ title: 'Las contraseñas no coinciden', variant: 'destructive' });
       return;
@@ -1606,6 +1623,7 @@ function UpdateProfileDialog({
 
   const handleSubmit = async () => {
     if (!user) return;
+
     if (!phone.trim() || !fechaNacimiento) {
       toast({
         title: 'Campos incompletos',
@@ -1693,55 +1711,18 @@ function ProductGrid({
   onUpdateQuantity,
   order,
   disabled = false,
-  imageVersion,
 }: {
   items: Item[];
   onUpdateQuantity: (item: Item, action: 'inc' | 'dec') => void;
   order: OrderItem[];
   disabled?: boolean;
-  imageVersion?: string | null;
 }) {
-  const [imageMap, setImageMap] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadProductImages = async () => {
-      const entries = await Promise.all(
-        items.map(async (item) => {
-          const finalUrl = getVersionedUrl(
-            item.image_url || MENU_IMAGE_PLACEHOLDER,
-            imageVersion ?? item.id
-          );
-
-          const cachedUrl = await getCachedImageUrl(finalUrl || MENU_IMAGE_PLACEHOLDER);
-          return [item.id, cachedUrl] as const;
-        })
-      );
-
-      if (!cancelled) {
-        setImageMap(Object.fromEntries(entries));
-      }
-    };
-
-    if (items.length === 0) {
-      setImageMap({});
-      return;
-    }
-
-    loadProductImages();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [items, imageVersion]);
-
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
       {items.map((item) => {
         const itemInOrder = order.find((i) => i.id === item.id);
         const quantity = itemInOrder?.quantity || 0;
-        const imageSrc = imageMap[item.id];
+        const imageSrc = getLocalItemImage(item.id);
 
         return (
           <Card
@@ -1751,24 +1732,25 @@ function ProductGrid({
             }`}
           >
             <div className="w-full h-36 bg-white/10 flex items-center justify-center overflow-hidden">
-              {imageSrc ? (
-                <img
-                  src={imageSrc}
-                  alt={item.nombre}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                  draggable={false}
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center text-white/60 text-xs">
-                  <Loader2 className="h-5 w-5 animate-spin mb-2" />
-                  Cargando imagen...
-                </div>
-              )}
+              <img
+                src={imageSrc}
+                alt={item.nombre}
+                className="w-full h-full object-cover"
+                loading="lazy"
+                draggable={false}
+                onError={(event) => {
+                  const img = event.currentTarget;
+
+                  if (img.src.endsWith(LOCAL_ITEM_IMAGE_FALLBACK)) return;
+
+                  img.src = LOCAL_ITEM_IMAGE_FALLBACK;
+                }}
+              />
             </div>
 
             <CardContent className="p-4 flex-grow">
               <CardTitle className="font-aventura text-lg">{item.nombre}</CardTitle>
+
               <CardDescription className="text-sm mt-1 opacity-80">
                 {item.description}
               </CardDescription>
@@ -1794,6 +1776,7 @@ function ProductGrid({
                   >
                     <MinusCircle className="h-5 w-5" />
                   </Button>
+
                   <span className="w-10 text-center text-xl font-bold">{quantity}</span>
                 </div>
               )}
@@ -1805,25 +1788,37 @@ function ProductGrid({
   );
 }
 
-function PedidosActivosWidget({ loading, activos }: { loading: boolean; activos: Pedido[] }) {
+function PedidosActivosWidget({
+  loading,
+  activos,
+}: {
+  loading: boolean;
+  activos: Pedido[];
+}) {
   if (!loading && activos.length === 0) return null;
 
   const getStatusInfo = (estado: string) => {
-    if (estado === 'pendiente')
+    if (estado === 'pendiente') {
       return {
         text: 'Pedido Recibido',
         icon: <Loader2 className="h-4 w-4 animate-spin text-yellow-400" />,
       };
-    if (estado === 'preparando')
+    }
+
+    if (estado === 'preparando') {
       return {
         text: 'Preparando ☕',
         icon: <Coffee className="h-4 w-4 text-blue-400" />,
       };
-    if (estado === 'listo')
+    }
+
+    if (estado === 'listo') {
       return {
         text: '¡Listo para retirar! 🍶',
         icon: <ShoppingBag className="h-4 w-4 text-green-400" />,
       };
+    }
+
     return { text: 'Desconocido', icon: <></> };
   };
 
@@ -1841,6 +1836,7 @@ function PedidosActivosWidget({ loading, activos }: { loading: boolean; activos:
                   {status.text}
                 </span>
               </CardTitle>
+
               <CardDescription className="text-white/70">
                 Realizado {new Date(pedido.created_at).toLocaleString('es-EC', {
                   hour: '2-digit',
@@ -1890,7 +1886,9 @@ function PedidosHistorialList({
   return (
     <div className="space-y-8 mt-6">
       <div>
-        <h3 className="font-aventura text-xl font-bold mb-4 text-white">Historial de Pedidos</h3>
+        <h3 className="font-aventura text-xl font-bold mb-4 text-white">
+          Historial de Pedidos
+        </h3>
 
         {historial.length === 0 && (
           <p className="text-white/70">Aún no tienes historial de pedidos.</p>
@@ -1912,7 +1910,9 @@ function PedidosHistorialList({
                     Pendiente de calificar
                   </span>
                 )}
+
                 <CardTitle className="font-aventura text-white/70">Entregado</CardTitle>
+
                 <CardDescription className="text-white/70">
                   Pedido del{' '}
                   {new Date(pedido.created_at).toLocaleString('es-EC', {
@@ -2074,6 +2074,7 @@ function RatingDialog({
           description: 'Ya has calificado este pedido.',
           variant: 'destructive',
         });
+
         setYaCalificado(true);
       } else {
         toast({
@@ -2100,6 +2101,7 @@ function RatingDialog({
           <DialogTitle className="font-aventura text-2xl text-neutral-900">
             Califica tu Pedido
           </DialogTitle>
+
           <DialogDescription className="text-neutral-600">
             Tu opinión nos ayuda a mejorar.
           </DialogDescription>
@@ -2116,7 +2118,9 @@ function RatingDialog({
                 <button key={star} onClick={() => setRating(star)}>
                   <Star
                     className={`h-8 w-8 ${
-                      rating >= star ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'
+                      rating >= star
+                        ? 'text-yellow-400 fill-yellow-400'
+                        : 'text-gray-300'
                     }`}
                   />
                 </button>

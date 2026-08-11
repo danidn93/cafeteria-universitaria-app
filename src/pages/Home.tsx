@@ -101,7 +101,9 @@ type PedidoPwaRealtime = {
   user_id: string;
   estado: 'pendiente' | 'preparando' | 'listo' | 'entregado' | 'cancelado';
   cafeteria_id: string | null;
+  created_at: string | null;
   updated_at: string | null;
+  calificado: boolean;
 };
 
 type ItemRealtime = {
@@ -358,6 +360,8 @@ export default function Home() {
   const pedidosEstadoRef = useRef<Record<string, string>>({});
   const notifiedRef = useRef<Set<string>>(new Set());
   const realtimeChannelRef = useRef<any>(null);
+  const pedidosFetchInFlightRef = useRef(false);
+  const lastPedidosSyncRef = useRef(0);
 
   const blockRef = useRef<{
     reason: BlockReasonCode | null;
@@ -511,7 +515,7 @@ export default function Home() {
     try {
       const { data, error } = await supabase
         .from('configuracion')
-        .select('*')
+        .select('abierto, nombre_local, horario, horario_arr, logo_url, hero_bg_url, movil_bg, updated_at')
         .eq('id', cafeteriaActivaId)
         .single();
 
@@ -577,6 +581,10 @@ export default function Home() {
   const fetchPedidos = useCallback(
     async (silent = false) => {
       if (!user || !cafeteriaActivaId || cafeteriaIds.length === 0) return;
+      if (pedidosFetchInFlightRef.current) return;
+
+      pedidosFetchInFlightRef.current = true;
+      lastPedidosSyncRef.current = Date.now();
 
       if (!silent) setLoadingPedidos(true);
 
@@ -593,7 +601,7 @@ export default function Home() {
 
         if (error) throw error;
 
-        const pedidos = data ?? [];
+        const pedidos = (data ?? []) as Pedido[];
 
         pedidos.forEach((p) => {
           pedidosEstadoRef.current[p.id] = p.estado;
@@ -605,22 +613,24 @@ export default function Home() {
           (p) => p.cafeteria_id === cafeteriaActivaId
         );
 
-        const activos = pedidosCafeteriaActiva.filter((p) =>
-          ['pendiente', 'preparando', 'listo'].includes(p.estado)
+        setPedidosActivos(
+          pedidosCafeteriaActiva.filter((p) =>
+            ['pendiente', 'preparando', 'listo'].includes(p.estado)
+          )
         );
 
-        const historial = pedidosCafeteriaActiva
-          .filter((p) => p.estado === 'entregado')
-          .sort(
-            (a, b) =>
-              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-          );
-
-        setPedidosActivos(activos);
-        setPedidosHistorial(historial);
+        setPedidosHistorial(
+          pedidosCafeteriaActiva
+            .filter((p) => p.estado === 'entregado')
+            .sort(
+              (a, b) =>
+                new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            )
+        );
       } catch (err: any) {
         console.error('Fetch pedidos error:', err.message);
       } finally {
+        pedidosFetchInFlightRef.current = false;
         if (!silent) setLoadingPedidos(false);
       }
     },
@@ -655,16 +665,18 @@ export default function Home() {
     if (!cafeteriaActivaId) return;
 
     const loadAll = async () => {
-      await Promise.all([
-        fetchConfig(),
-        fetchMenu(),
-        fetchPedidos(),
-        fetchUserRanking(),
-      ]);
+      await Promise.all([fetchConfig(), fetchMenu(), fetchPedidos()]);
     };
 
     loadAll();
-  }, [cafeteriaActivaId, fetchConfig, fetchMenu, fetchPedidos, fetchUserRanking]);
+  }, [cafeteriaActivaId, fetchConfig, fetchMenu, fetchPedidos]);
+
+  // El ranking depende del usuario, no de la cafetería seleccionada.
+  // Así evitamos repetir esta RPC cada vez que el usuario cambia de cafetería.
+  useEffect(() => {
+    if (!user?.id) return;
+    fetchUserRanking();
+  }, [user?.id, fetchUserRanking]);
 
   useEffect(() => {
     if (!user?.id || !cafeteriaActivaId) {
@@ -719,33 +731,63 @@ export default function Home() {
 
           pedidosEstadoRef.current[nuevo.id] = estadoNuevo;
 
-          setPedidosActivos((prev) =>
+          setPedidosBloqueoGlobal((prev) =>
             prev.map((p) =>
               p.id === nuevo.id
                 ? {
                     ...p,
                     estado: estadoNuevo,
                     updated_at: nuevo.updated_at ?? p.updated_at,
+                    calificado: nuevo.calificado ?? p.calificado,
                   }
                 : p
             )
           );
 
-          if (estadoNuevo === 'entregado') {
-            setPedidosActivos((prev) => prev.filter((p) => p.id !== nuevo.id));
-            setPedidosHistorial((prev) => [
-              {
-                id: nuevo.id,
-                estado: 'entregado',
-                created_at: new Date().toISOString(),
-                updated_at: nuevo.updated_at ?? new Date().toISOString(),
-                calificado: false,
-                cafeteria_id: nuevo.cafeteria_id,
-                items: [],
-              },
-              ...prev,
-            ]);
-          }
+          setPedidosActivos((prev) => {
+            const existente = prev.find((p) => p.id === nuevo.id);
+
+            if (estadoNuevo === 'entregado') {
+              if (existente) {
+                const entregado: Pedido = {
+                  ...existente,
+                  estado: 'entregado',
+                  updated_at: nuevo.updated_at ?? existente.updated_at,
+                  calificado: nuevo.calificado ?? existente.calificado,
+                };
+
+                setPedidosHistorial((historialPrev) => [
+                  entregado,
+                  ...historialPrev.filter((p) => p.id !== nuevo.id),
+                ]);
+              } else {
+                setPedidosHistorial((historialPrev) =>
+                  historialPrev.map((p) =>
+                    p.id === nuevo.id
+                      ? {
+                          ...p,
+                          updated_at: nuevo.updated_at ?? p.updated_at,
+                          calificado: nuevo.calificado ?? p.calificado,
+                        }
+                      : p
+                  )
+                );
+              }
+
+              return prev.filter((p) => p.id !== nuevo.id);
+            }
+
+            return prev.map((p) =>
+              p.id === nuevo.id
+                ? {
+                    ...p,
+                    estado: estadoNuevo,
+                    updated_at: nuevo.updated_at ?? p.updated_at,
+                    calificado: nuevo.calificado ?? p.calificado,
+                  }
+                : p
+            );
+          });
         }
       )
       .on(
@@ -778,12 +820,15 @@ export default function Home() {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'UPDATE',
           schema: 'public',
           table: 'configuracion',
           filter: `id=eq.${cafeteriaActivaId}`,
         },
-        () => fetchConfig()
+        (payload) => {
+          const nuevo = payload.new as Config | null;
+          if (nuevo) setConfig(nuevo);
+        }
       )
       .subscribe((status) => {
         console.log('[REALTIME STATUS]', status);
@@ -797,16 +842,27 @@ export default function Home() {
         realtimeChannelRef.current = null;
       }
     };
-  }, [user?.id, cafeteriaActivaId, fetchConfig]);
+  }, [user?.id, cafeteriaActivaId]);
 
+  // Ya no hacemos polling cada 5 segundos. Realtime mantiene la pantalla al día.
+  // Sólo resincronizamos al volver a la pestaña/ventana y, como máximo,
+  // si han pasado 60 segundos desde la última lectura.
   useEffect(() => {
     if (!user?.id || !cafeteriaActivaId) return;
 
-    const interval = setInterval(() => {
+    const resyncIfNeeded = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastPedidosSyncRef.current < 60_000) return;
       fetchPedidos(true);
-    }, 5000);
+    };
 
-    return () => clearInterval(interval);
+    document.addEventListener('visibilitychange', resyncIfNeeded);
+    window.addEventListener('focus', resyncIfNeeded);
+
+    return () => {
+      document.removeEventListener('visibilitychange', resyncIfNeeded);
+      window.removeEventListener('focus', resyncIfNeeded);
+    };
   }, [user?.id, cafeteriaActivaId, fetchPedidos]);
 
   const evaluateOrderBlock = useCallback(() => {
@@ -1039,7 +1095,7 @@ export default function Home() {
           cafeteria_id: cafeteriaActivaId,
           estado: 'pendiente',
         })
-        .select('id')
+        .select('id, estado, created_at, updated_at, calificado, cafeteria_id')
         .single();
 
       if (pedidoError || !pedidoData) throw pedidoError;
@@ -1059,11 +1115,30 @@ export default function Home() {
 
       if (itemsError) throw itemsError;
 
+      const nuevoPedido: Pedido = {
+        id: pedidoData.id,
+        estado: pedidoData.estado,
+        created_at: pedidoData.created_at,
+        updated_at: pedidoData.updated_at,
+        calificado: pedidoData.calificado ?? false,
+        cafeteria_id: pedidoData.cafeteria_id,
+        items: itemsToInsert.map((item) => ({
+          item_nombre: item.item_nombre,
+          cantidad: item.cantidad,
+        })),
+      };
+
+      pedidosEstadoRef.current[nuevoPedido.id] = nuevoPedido.estado;
+      setPedidosActivos((prev) => [nuevoPedido, ...prev]);
+      setPedidosBloqueoGlobal((prev) => [
+        nuevoPedido,
+        ...prev.filter((p) => p.id !== nuevoPedido.id),
+      ]);
+
       toast({ title: '¡Pedido Confirmado!', description: 'Muchas Gracias.' });
 
       setOrder([]);
       setIsSheetOpen(false);
-      fetchPedidos();
     } catch (error: any) {
       console.error('Error submitting order:', error);
 
@@ -1076,6 +1151,15 @@ export default function Home() {
       setIsSubmitting(false);
     }
   };
+
+  const handleRatingSuccess = useCallback((pedidoId: string) => {
+    setPedidosHistorial((prev) =>
+      prev.map((p) => (p.id === pedidoId ? { ...p, calificado: true } : p))
+    );
+    setPedidosBloqueoGlobal((prev) =>
+      prev.map((p) => (p.id === pedidoId ? { ...p, calificado: true } : p))
+    );
+  }, []);
 
   const itemsPorCategoria = useMemo(() => {
     const cafes = items.filter((item) => item.tipo === 'cafe' && item.disponible);
@@ -1340,7 +1424,7 @@ export default function Home() {
               cafeteriaId={cafeteriaActivaId}
               loading={loadingPedidos}
               historial={pedidosHistorial}
-              onRatingSuccess={fetchPedidos}
+              onRatingSuccess={handleRatingSuccess}
             />
           </TabsContent>
         </Tabs>
@@ -1872,7 +1956,7 @@ function PedidosHistorialList({
   cafeteriaId: string | null;
   loading: boolean;
   historial: Pedido[];
-  onRatingSuccess: () => void;
+  onRatingSuccess: (pedidoId: string) => void;
 }) {
   if (loading) {
     return (
@@ -2029,7 +2113,7 @@ function RatingDialog({
   pedidoId: string;
   cafeteriaId: string | null;
   initialCalificado: boolean;
-  onRatingSuccess: () => void;
+  onRatingSuccess: (pedidoId: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [rating, setRating] = useState(0);
@@ -2066,7 +2150,7 @@ function RatingDialog({
 
       setIsOpen(false);
       setYaCalificado(true);
-      onRatingSuccess();
+      onRatingSuccess(pedidoId);
     } catch (error: any) {
       if (error.code === '23505') {
         toast({

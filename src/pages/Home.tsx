@@ -2146,7 +2146,7 @@ function RatingDialog({
 
       if (updateError) throw updateError;
 
-      toast({ title: '¡Gracias!', description: 'Tu calificación ha sido enviada.' });
+      toast({ title: '¡Gracias!', description: 'Tu calificación anónima ha sido enviada.' });
 
       setIsOpen(false);
       setYaCalificado(true);
@@ -2190,6 +2190,16 @@ function RatingDialog({
             Tu opinión nos ayuda a mejorar.
           </DialogDescription>
         </DialogHeader>
+
+        {!yaCalificado && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            <p className="font-semibold">🔒 Tu calificación es anónima</p>
+            <p className="mt-1 text-blue-700">
+              La cafetería no podrá ver tu nombre ni identificar quién realizó esta
+              calificación. Puedes compartir tu opinión con total confianza.
+            </p>
+          </div>
+        )}
 
         {yaCalificado ? (
           <p className="text-neutral-600 py-8 text-center">

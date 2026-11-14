@@ -123,8 +123,8 @@ const getLocalItemImage = (itemId: string) => {
   return `/assets/items/item_${itemId}.svg`;
 };
 
-// Los horarios de configuracion pueden recibirse como arreglo lunes-domingo,
-// como arreglo domingo-sabado, o como texto etiquetado por dia.
+// Los horarios de configuracion pueden recibirse como arreglo lunes-domingo
+// o como texto etiquetado por dia.
 // Nunca aplicamos el horario de un dia laborable al fin de semana.
 const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'] as const;
 const normalizeDay = (value: string) =>

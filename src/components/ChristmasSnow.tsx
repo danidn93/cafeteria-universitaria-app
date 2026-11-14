@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { CSSProperties } from 'react';
 import './ChristmasSnow.css';
 
 type Snowflake = {
@@ -36,7 +37,7 @@ export default function ChristmasSnow() {
             animationDelay: flake.delay,
             animationDuration: flake.duration,
             '--snow-drift': flake.drift,
-          } as React.CSSProperties}
+          } as CSSProperties}
         />
       ))}
     </div>

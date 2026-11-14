@@ -1,6 +1,7 @@
 // client/src/pages/Home.tsx
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
+import ChristmasSnow from '@/components/ChristmasSnow';
 import { useAuth } from '@/context/AuthContext';
 import type { SessionUser } from '@/context/AuthContext';
 import { supabase } from '@/services/supabaseClient';
@@ -122,33 +123,61 @@ const getLocalItemImage = (itemId: string) => {
   return `/assets/items/item_${itemId}.svg`;
 };
 
-const getHorarioHoy = (horarioArr: string[]): string => {
-  const dayIndex = new Date().getDay();
-  const todayIndex = (dayIndex + 6) % 7;
-  return horarioArr[todayIndex] || 'Horario no disponible';
+// Los horarios de configuracion pueden recibirse como arreglo lunes-domingo,
+// como arreglo domingo-sabado, o como texto etiquetado por dia.
+// Nunca aplicamos el horario de un dia laborable al fin de semana.
+const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'] as const;
+const normalizeDay = (value: string) =>
+  value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+const getHorarioDia = (horarioArr: unknown, horarioTexto: string | null | undefined, date = new Date()): string => {
+  const day = date.getDay();
+  const name = DAY_NAMES[day];
+  const values = Array.isArray(horarioArr) ? horarioArr : [];
+  const entries = values.filter((v): v is string => typeof v === 'string');
+  const joined = [horarioTexto || '', ...entries].join('\n');
+
+  // Si el horario contiene nombres de dias, cada uno tiene prioridad.
+  const namedLines = joined.split(/[\n;|]+/).map(v => v.trim()).filter(Boolean);
+  const named = namedLines.find(v => {
+    const normalized = normalizeDay(v);
+    return normalized.startsWith(name + ':') || normalized.startsWith(name + ' ') || normalized === name;
+  });
+  if (named) {
+    const cleaned = named.replace(/^[^:\s]+\s*:?\s*/u, '').trim();
+    return cleaned || 'Cerrado';
+  }
+
+  // Formato habitual de la app: lunes a domingo (7 posiciones).
+  // Con 5 posiciones, solamente hay horario de lunes a viernes.
+  // Si hay un solo rango global, se usa en todos los dias.
+  if (entries.length === 1 && !/lunes|martes|miercoles|jueves|viernes|sabado|domingo/i.test(entries[0])) {
+    return entries[0].trim() || 'Horario no configurado';
+  }
+  const index = (day + 6) % 7;
+  if (entries.length >= 7) return entries[index]?.trim() || 'Horario no configurado';
+  if (entries.length >= 5 && day >= 1 && day <= 5) return entries[day - 1]?.trim() || 'Horario no configurado';
+
+  return 'Horario no configurado';
 };
 
-const isWithinHorario = (horarioArr: string[]): boolean => {
-  if (!Array.isArray(horarioArr)) return false;
+const getHorarioHoy = (horarioArr: unknown, horarioTexto?: string | null, date = new Date()): string =>
+  getHorarioDia(horarioArr, horarioTexto, date);
 
-  const now = new Date();
-  const dayIndex = (now.getDay() + 6) % 7;
-  const today = horarioArr[dayIndex];
-
-  if (!today) return false;
-
-  const match = today.match(/(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})/);
+const isWithinHorario = (horarioArr: unknown, horarioTexto?: string | null, now = new Date()): boolean => {
+  const today = getHorarioDia(horarioArr, horarioTexto, now);
+  if (/cerrado|no disponible|no configurado|descanso/i.test(today)) return false;
+  const match = today.match(/(\d{1,2}):(\d{2})\s*(?:-|–|a)\s*(\d{1,2}):(\d{2})/i);
   if (!match) return false;
+  const start = Number(match[1]) * 60 + Number(match[2]);
+  const end = Number(match[3]) * 60 + Number(match[4]);
+  const current = now.getHours() * 60 + now.getMinutes();
+  return start <= end ? current >= start && current <= end : current >= start || current <= end;
+};
 
-  const [, start, end] = match;
-
-  const toMinutes = (t: string) => {
-    const [h, m] = t.split(':').map(Number);
-    return h * 60 + m;
-  };
-
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  return nowMin >= toMinutes(start) && nowMin <= toMinutes(end);
+const isChristmasSeason = (date = new Date()): boolean => {
+  const month = date.getMonth();
+  return month === 10 || month === 11 || (month === 0 && date.getDate() <= 6);
 };
 
 const playReadySound = () => {
@@ -325,7 +354,18 @@ export default function Home() {
   const { user, logout, refreshUser } = useAuth();
 
   const [minH, setMinH] = useState<string>('100svh');
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [showChristmasSnow, setShowChristmasSnow] = useState(() => isChristmasSeason());
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now);
+      setShowChristmasSnow(isChristmasSeason(now));
+    }, 60000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const [items, setItems] = useState<Item[]>([]);
   const [order, setOrder] = useState<OrderItem[]>([]);
@@ -529,8 +569,8 @@ export default function Home() {
   const cafeteriaOperativa = useMemo(() => {
     if (!config) return false;
     if (!config.abierto) return false;
-    return isWithinHorario(config.horario_arr);
-  }, [config]);
+    return isWithinHorario(config.horario_arr, config.horario, currentTime);
+  }, [config, currentTime]);
 
   const fetchCafeterias = async () => {
     if (!user || cafeteriaIds.length === 0) {
@@ -1174,6 +1214,7 @@ export default function Home() {
 
   return (
     <div className="unemi text-white relative pb-24" style={{ minHeight: minH }}>
+      {showChristmasSnow && <ChristmasSnow />}
       <div className="fixed inset-0 -z-20 bg-[hsl(200_100%_13.5%)] overflow-hidden">
         {cachedBgSrc ? (
           <img
@@ -1201,7 +1242,7 @@ export default function Home() {
           <div className="mt-3 text-sm text-white opacity-70 flex items-center gap-4">
             <div className="flex items-center gap-1.5">
               <Clock className="h-4 w-4" />
-              <span>{config ? getHorarioHoy(config.horario_arr) : '...'}</span>
+              <span>{config ? getHorarioHoy(config.horario_arr, config.horario, currentTime) : '...'}</span>
             </div>
 
             <div className="flex items-center gap-1.5">

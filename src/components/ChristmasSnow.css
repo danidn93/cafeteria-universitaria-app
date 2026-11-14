@@ -1,0 +1,26 @@
+/* Capa de nieve decorativa: nunca intercepta toques ni bloquea los controles. */
+.christmas-snow {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 20;
+  contain: layout style paint;
+}
+.christmas-snow__flake {
+  position: absolute;
+  top: -12px;
+  display: block;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, .65);
+  animation: christmas-snow-fall linear infinite;
+  will-change: transform;
+}
+@keyframes christmas-snow-fall {
+  from { transform: translate3d(0, -20px, 0); }
+  to { transform: translate3d(var(--snow-drift), 105vh, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .christmas-snow__flake { animation: none; display: none; }
+}
